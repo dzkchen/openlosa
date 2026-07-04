@@ -1,4 +1,5 @@
 import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ReactDOM from "react-dom/client";
 import { Navigate, Route, RouterProvider, createBrowserRouter, createRoutesFromElements } from "react-router-dom";
 import App from "./App";
@@ -10,6 +11,15 @@ import OutreachPage from "./features/outreach/OutreachPage";
 import ProspectsPage from "./features/prospects/ProspectsPage";
 import SummaryPage from "./features/summary/SummaryPage";
 import "./index.css";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 20_000,
+      refetchOnWindowFocus: false
+    }
+  }
+});
 
 const router = createBrowserRouter(
   createRoutesFromElements(
@@ -28,6 +38,8 @@ const router = createBrowserRouter(
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   </React.StrictMode>
 );

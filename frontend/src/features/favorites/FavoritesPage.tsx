@@ -1,6 +1,5 @@
-import EmptyState from "../../components/layout/EmptyState";
 import PageHeader from "../../components/layout/PageHeader";
-import WorkspacePanel from "../../components/layout/WorkspacePanel";
+import ApplicationTracker from "../applications/components/ApplicationTracker";
 
 export default function FavoritesPage() {
   return (
@@ -10,9 +9,12 @@ export default function FavoritesPage() {
         title="Saved focus list"
         description="Applications marked for repeated review and faster follow-up."
       />
-      <WorkspacePanel title="Favorites" meta="0 rows">
-        <EmptyState title="No favorites yet" detail="Favorite flags arrive with the application tracker in v0.1." />
-      </WorkspacePanel>
+      <ApplicationTracker
+        emptyTitle="No favorites yet"
+        emptyDetail="Mark applications as favorites from the tracker to keep them in this focus list."
+        favoriteOnly
+        title="Favorites"
+      />
     </div>
   );
 }
