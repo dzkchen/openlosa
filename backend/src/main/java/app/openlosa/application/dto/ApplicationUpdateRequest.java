@@ -16,6 +16,7 @@ public record ApplicationUpdateRequest(
     @Size(max = 255) String location,
     ApplicationStatus status,
     LocalDate appliedAt,
+    Boolean clearAppliedAt,
     ApplicationSource source,
     @Size(max = 255) String salaryText,
     String notes,

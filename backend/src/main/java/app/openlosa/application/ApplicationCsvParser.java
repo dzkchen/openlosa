@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 
 import org.springframework.util.StringUtils;
 
@@ -44,26 +45,10 @@ final class ApplicationCsvParser {
     private ApplicationCsvParser() {
     }
 
-    static List<ImportedApplicationRow> parse(Reader reader) throws IOException {
-        var records = parseRecords(reader);
-        records.removeIf(record -> isBlankRecord(record.values()));
-
-        if (records.isEmpty()) {
-            throw new BadRequestException("CSV file is empty");
-        }
-
-        validateHeader(records.getFirst());
-
-        var rows = new ArrayList<ImportedApplicationRow>();
-        for (int i = 1; i < records.size(); i++) {
-            rows.add(toApplicationRow(records.get(i)));
-        }
-
-        if (rows.isEmpty()) {
-            throw new BadRequestException("CSV has no application rows");
-        }
-
-        return rows;
+    static int parse(Reader reader, Consumer<ImportedApplicationRow> rowConsumer) throws IOException {
+        var state = new CsvParseState(rowConsumer);
+        parseRecords(reader, state::accept);
+        return state.importedRows();
     }
 
     private static ImportedApplicationRow toApplicationRow(CsvRecord record) {
@@ -214,8 +199,7 @@ final class ApplicationCsvParser {
         return values.stream().noneMatch(StringUtils::hasText);
     }
 
-    private static List<CsvRecord> parseRecords(Reader reader) throws IOException {
-        var records = new ArrayList<CsvRecord>();
+    private static void parseRecords(Reader reader, Consumer<CsvRecord> recordConsumer) throws IOException {
         var values = new ArrayList<String>();
         var field = new StringBuilder();
         var inQuotes = false;
@@ -256,7 +240,7 @@ final class ApplicationCsvParser {
                 quotedField = false;
                 lastWasComma = true;
             } else if (current == '\r') {
-                addRecord(records, values, field, rowNumber);
+                addRecord(recordConsumer, values, field, rowNumber);
                 quotedField = false;
                 lastWasComma = false;
                 var afterCarriageReturn = pushbackReader.read();
@@ -265,7 +249,7 @@ final class ApplicationCsvParser {
                 }
                 rowNumber++;
             } else if (current == '\n') {
-                addRecord(records, values, field, rowNumber);
+                addRecord(recordConsumer, values, field, rowNumber);
                 quotedField = false;
                 lastWasComma = false;
                 rowNumber++;
@@ -280,15 +264,13 @@ final class ApplicationCsvParser {
         }
 
         if (field.length() > 0 || !values.isEmpty() || lastWasComma || quotedField) {
-            addRecord(records, values, field, rowNumber);
+            addRecord(recordConsumer, values, field, rowNumber);
         }
-
-        return records;
     }
 
-    private static void addRecord(List<CsvRecord> records, List<String> values, StringBuilder field, int rowNumber) {
+    private static void addRecord(Consumer<CsvRecord> recordConsumer, List<String> values, StringBuilder field, int rowNumber) {
         values.add(field.toString());
-        records.add(new CsvRecord(rowNumber, List.copyOf(values)));
+        recordConsumer.accept(new CsvRecord(rowNumber, List.copyOf(values)));
         values.clear();
         field.setLength(0);
     }
@@ -297,5 +279,41 @@ final class ApplicationCsvParser {
     }
 
     private record CsvRecord(int rowNumber, List<String> values) {
+    }
+
+    private static final class CsvParseState {
+
+        private final Consumer<ImportedApplicationRow> rowConsumer;
+        private boolean headerSeen;
+        private int importedRows;
+
+        private CsvParseState(Consumer<ImportedApplicationRow> rowConsumer) {
+            this.rowConsumer = rowConsumer;
+        }
+
+        private void accept(CsvRecord record) {
+            if (isBlankRecord(record.values())) {
+                return;
+            }
+
+            if (!headerSeen) {
+                validateHeader(record);
+                headerSeen = true;
+                return;
+            }
+
+            rowConsumer.accept(toApplicationRow(record));
+            importedRows++;
+        }
+
+        private int importedRows() {
+            if (!headerSeen) {
+                throw new BadRequestException("CSV file is empty");
+            }
+            if (importedRows == 0) {
+                throw new BadRequestException("CSV has no application rows");
+            }
+            return importedRows;
+        }
     }
 }

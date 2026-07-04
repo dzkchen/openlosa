@@ -356,6 +356,60 @@ class ApplicationTrackerIntegrationTest {
     }
 
     @Test
+    void updateCanClearAppliedAt() throws Exception {
+        long applicationId = createApplication("""
+            {
+              "companyName": "Mercury",
+              "roleTitle": "Backend Intern",
+              "status": "APPLIED",
+              "appliedAt": "2026-01-15",
+              "source": "MANUAL"
+            }
+            """);
+
+        mockMvc.perform(put("/api/v1/applications/{id}", applicationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "clearAppliedAt": true
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status", is("APPLIED")))
+            .andExpect(jsonPath("$.appliedAt", nullValue()));
+
+        LocalDate appliedAt = jdbcTemplate.queryForObject(
+            "SELECT applied_at FROM application WHERE id = ?",
+            LocalDate.class,
+            applicationId
+        );
+        assertThat(appliedAt).isNull();
+    }
+
+    @Test
+    void updateRejectsSettingAndClearingAppliedAtTogether() throws Exception {
+        long applicationId = createApplication("""
+            {
+              "companyName": "Mercury",
+              "roleTitle": "Backend Intern",
+              "status": "APPLIED",
+              "source": "MANUAL"
+            }
+            """);
+
+        mockMvc.perform(put("/api/v1/applications/{id}", applicationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "appliedAt": "2026-01-15",
+                      "clearAppliedAt": true
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail", is("appliedAt cannot be set and cleared in the same request")));
+    }
+
+    @Test
     void undoStatusDeletesLatestTransitionAndRestoresPriorStatus() throws Exception {
         long applicationId = createApplication("""
             {
@@ -439,6 +493,43 @@ class ApplicationTrackerIntegrationTest {
         changeStatus(applicationId, "APPLIED")
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.appliedAt", is(LocalDate.now().toString())));
+
+        mockMvc.perform(post("/api/v1/applications/{id}/status/undo", applicationId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status", is("SAVED")))
+            .andExpect(jsonPath("$.appliedAt", nullValue()));
+
+        LocalDate appliedAt = jdbcTemplate.queryForObject(
+            "SELECT applied_at FROM application WHERE id = ?",
+            LocalDate.class,
+            applicationId
+        );
+        assertThat(appliedAt).isNull();
+    }
+
+    @Test
+    void undoStatusToSavedClearsManuallyEditedAppliedAt() throws Exception {
+        long applicationId = createApplication("""
+            {
+              "companyName": "Cursor",
+              "roleTitle": "Infrastructure Intern",
+              "status": "SAVED",
+              "source": "MANUAL"
+            }
+            """);
+
+        changeStatus(applicationId, "APPLIED")
+            .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/v1/applications/{id}", applicationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "appliedAt": "2026-01-15"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.appliedAt", is("2026-01-15")));
 
         mockMvc.perform(post("/api/v1/applications/{id}/status/undo", applicationId))
             .andExpect(status().isOk())

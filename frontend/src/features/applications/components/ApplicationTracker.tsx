@@ -108,7 +108,7 @@ function EditableTextCell({ disabled, onCommit, placeholder, required, value }: 
 
 type DateCellProps = {
   disabled?: boolean;
-  onCommit: (value: string) => void;
+  onCommit: (value: string | null) => void;
   value: string | null;
 };
 
@@ -121,7 +121,9 @@ function DateCell({ disabled, onCommit, value }: DateCellProps) {
 
   function commit() {
     if (!draft) {
-      setDraft(value ?? "");
+      if (value !== null) {
+        onCommit(null);
+      }
       return;
     }
     if (draft !== value) {
@@ -494,7 +496,9 @@ export default function ApplicationTracker({
           <DateCell
             value={row.original.appliedAt}
             disabled={updateMutation.isPending}
-            onCommit={(appliedAt) => commitUpdate(row.original.id, { appliedAt })}
+            onCommit={(appliedAt) =>
+              commitUpdate(row.original.id, appliedAt === null ? { clearAppliedAt: true } : { appliedAt })
+            }
           />
         )
       },

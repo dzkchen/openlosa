@@ -78,6 +78,7 @@ export type ApplicationCreateInput = {
 };
 
 export type ApplicationUpdateInput = Partial<ApplicationCreateInput> & {
+  clearAppliedAt?: boolean;
   companyName?: string;
 };
 

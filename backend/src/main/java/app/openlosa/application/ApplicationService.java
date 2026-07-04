@@ -105,16 +105,14 @@ public class ApplicationService {
         }
 
         try (var reader = new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8)) {
-            var rows = ApplicationCsvParser.parse(reader);
             var imported = new ArrayList<ApplicationResponse>();
-
-            for (var row : rows) {
+            var importedCount = ApplicationCsvParser.parse(reader, row -> {
                 var application = createApplication(row.request());
                 attachImportedTags(application, row);
                 imported.add(ApplicationMapper.toResponse(application));
-            }
+            });
 
-            return new ApplicationImportResponse(imported.size(), imported);
+            return new ApplicationImportResponse(importedCount, imported);
         } catch (IOException exception) {
             throw new BadRequestException("Could not read CSV file");
         }
@@ -132,7 +130,7 @@ public class ApplicationService {
         validateAppliedAt(status, request.appliedAt());
         var application = new JobApplication(company, cleanRequired(request.roleTitle(), "roleTitle"), status, source);
 
-        applyEditableFields(application, request.postingUrl(), request.location(), request.appliedAt(),
+        applyEditableFields(application, request.postingUrl(), request.location(), request.appliedAt(), false,
             request.salaryText(), request.notes(), request.favorite());
         autoFillAppliedAt(application);
 
@@ -160,13 +158,18 @@ public class ApplicationService {
             application.setSource(request.source());
         }
 
-        if (request.status() != null || request.appliedAt() != null) {
+        var clearAppliedAt = Boolean.TRUE.equals(request.clearAppliedAt());
+        if (clearAppliedAt && request.appliedAt() != null) {
+            throw new BadRequestException("appliedAt cannot be set and cleared in the same request");
+        }
+
+        if (request.status() != null || request.appliedAt() != null || clearAppliedAt) {
             var effectiveStatus = request.status() == null ? application.getStatus() : request.status();
-            var effectiveAppliedAt = request.appliedAt() == null ? application.getAppliedAt() : request.appliedAt();
+            var effectiveAppliedAt = clearAppliedAt ? null : request.appliedAt() == null ? application.getAppliedAt() : request.appliedAt();
             validateAppliedAt(effectiveStatus, effectiveAppliedAt);
         }
 
-        applyEditableFields(application, request.postingUrl(), request.location(), request.appliedAt(),
+        applyEditableFields(application, request.postingUrl(), request.location(), request.appliedAt(), clearAppliedAt,
             request.salaryText(), request.notes(), request.favorite());
 
         if (request.status() != null && request.status() != application.getStatus()) {
@@ -193,8 +196,12 @@ public class ApplicationService {
             throw new BadRequestException("Initial status transition cannot be undone");
         }
 
-        application.setStatus(latestTransition.getFromStatus());
+        var restoredStatus = latestTransition.getFromStatus();
+        application.setStatus(restoredStatus);
         clearAutoFilledAppliedAtAfterUndo(application, latestTransition);
+        if (restoredStatus == ApplicationStatus.SAVED) {
+            application.setAppliedAt(null);
+        }
         transitionRepository.delete(latestTransition);
         return ApplicationMapper.toResponse(application);
     }
@@ -283,6 +290,7 @@ public class ApplicationService {
         String postingUrl,
         String location,
         LocalDate appliedAt,
+        boolean clearAppliedAt,
         String salaryText,
         String notes,
         Boolean favorite
@@ -293,7 +301,9 @@ public class ApplicationService {
         if (location != null) {
             application.setLocation(clean(location));
         }
-        if (appliedAt != null) {
+        if (clearAppliedAt) {
+            application.setAppliedAt(null);
+        } else if (appliedAt != null) {
             application.setAppliedAt(appliedAt);
         }
         if (salaryText != null) {
