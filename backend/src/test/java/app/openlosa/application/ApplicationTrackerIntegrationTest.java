@@ -1,6 +1,7 @@
 package app.openlosa.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
@@ -49,6 +50,7 @@ class ApplicationTrackerIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
+        dropFailingTransitionCheck();
         jdbcTemplate.update("DELETE FROM application_tag");
         jdbcTemplate.update("DELETE FROM status_transition");
         jdbcTemplate.update("DELETE FROM application");
@@ -123,6 +125,74 @@ class ApplicationTrackerIntegrationTest {
     }
 
     @Test
+    void applicationCrudRoundTripPreservesOmittedFieldsAndCascadesDelete() throws Exception {
+        long applicationId = createApplication("""
+            {
+              "companyName": "Databricks",
+              "companyWebsite": "https://databricks.com",
+              "roleTitle": "Data Platform Intern",
+              "postingUrl": "https://databricks.com/careers/data-platform-intern",
+              "location": "San Francisco",
+              "status": "APPLIED",
+              "appliedAt": "2026-01-15",
+              "source": "MANUAL",
+              "salaryText": "$55/hr",
+              "notes": "Initial spreadsheet row",
+              "favorite": true
+            }
+            """);
+
+        mockMvc.perform(get("/api/v1/applications/{id}", applicationId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.company.name", is("Databricks")))
+            .andExpect(jsonPath("$.company.website", is("https://databricks.com")))
+            .andExpect(jsonPath("$.roleTitle", is("Data Platform Intern")))
+            .andExpect(jsonPath("$.postingUrl", is("https://databricks.com/careers/data-platform-intern")))
+            .andExpect(jsonPath("$.appliedAt", is("2026-01-15")))
+            .andExpect(jsonPath("$.favorite", is(true)));
+
+        mockMvc.perform(put("/api/v1/applications/{id}", applicationId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "notes": "Edited in OpenLOSA",
+                      "favorite": false
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.notes", is("Edited in OpenLOSA")))
+            .andExpect(jsonPath("$.favorite", is(false)))
+            .andExpect(jsonPath("$.postingUrl", is("https://databricks.com/careers/data-platform-intern")))
+            .andExpect(jsonPath("$.appliedAt", is("2026-01-15")));
+
+        mockMvc.perform(get("/api/v1/applications")
+                .param("company", "data")
+                .param("source", "MANUAL")
+                .param("appliedFrom", "2026-01-01")
+                .param("appliedTo", "2026-01-31"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", hasSize(1)))
+            .andExpect(jsonPath("$[0].id", is((int) applicationId)));
+
+        mockMvc.perform(delete("/api/v1/applications/{id}", applicationId))
+            .andExpect(status().isNoContent());
+
+        Integer remainingApplications = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM application WHERE id = ?",
+            Integer.class,
+            applicationId
+        );
+        Integer remainingTransitions = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM status_transition WHERE application_id = ?",
+            Integer.class,
+            applicationId
+        );
+
+        assertThat(remainingApplications).isZero();
+        assertThat(remainingTransitions).isZero();
+    }
+
+    @Test
     void creationWritesInitialTransitionAndStatusChangeAutoFillsAppliedAt() throws Exception {
         long applicationId = createApplication("""
             {
@@ -193,6 +263,56 @@ class ApplicationTrackerIntegrationTest {
         assertThat(appliedAt).isEqualTo(LocalDate.now());
         assertThat(transitions).isEqualTo(2);
         assertThat(appliedTransition).isEqualTo(1);
+    }
+
+    @Test
+    void statusChangeRollsBackApplicationStatusWhenTransitionInsertFails() throws Exception {
+        long applicationId = createApplication("""
+            {
+              "companyName": "Mercury",
+              "roleTitle": "Backend Intern",
+              "status": "SAVED",
+              "source": "MANUAL"
+            }
+            """);
+
+        changeStatus(applicationId, "APPLIED")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status", is("APPLIED")));
+
+        jdbcTemplate.execute("""
+            ALTER TABLE status_transition
+            ADD CONSTRAINT chk_fail_no_interview CHECK (to_status <> 'INTERVIEW')
+            """);
+
+        assertThatThrownBy(() -> changeStatus(applicationId, "INTERVIEW"))
+            .hasRootCauseInstanceOf(java.sql.SQLException.class);
+
+        String persistedStatus = jdbcTemplate.queryForObject(
+            "SELECT status FROM application WHERE id = ?",
+            String.class,
+            applicationId
+        );
+        Integer transitions = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM status_transition WHERE application_id = ?",
+            Integer.class,
+            applicationId
+        );
+        Integer failedTransition = jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM status_transition
+            WHERE application_id = ?
+              AND from_status = 'APPLIED'
+              AND to_status = 'INTERVIEW'
+            """,
+            Integer.class,
+            applicationId
+        );
+
+        assertThat(persistedStatus).isEqualTo("APPLIED");
+        assertThat(transitions).isEqualTo(2);
+        assertThat(failedTransition).isZero();
     }
 
     @Test
@@ -428,6 +548,23 @@ class ApplicationTrackerIntegrationTest {
                   "toStatus": "%s"
                 }
                 """.formatted(toStatus)));
+    }
+
+    private void dropFailingTransitionCheck() {
+        Integer constraintExists = jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.table_constraints
+            WHERE constraint_schema = DATABASE()
+              AND table_name = 'status_transition'
+              AND constraint_name = 'chk_fail_no_interview'
+            """,
+            Integer.class
+        );
+
+        if (constraintExists != null && constraintExists > 0) {
+            jdbcTemplate.execute("ALTER TABLE status_transition DROP CHECK chk_fail_no_interview");
+        }
     }
 
     private long readId(String json) throws Exception {

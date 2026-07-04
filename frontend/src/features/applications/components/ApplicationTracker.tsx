@@ -78,7 +78,7 @@ function EditableTextCell({ disabled, onCommit, placeholder, required, value }: 
     }
     if (next !== current) {
       onCommit(next);
-      setDraft(value ?? "");
+      setDraft(next);
     }
   }
 
@@ -126,7 +126,6 @@ function DateCell({ disabled, onCommit, value }: DateCellProps) {
     }
     if (draft !== value) {
       onCommit(draft);
-      setDraft(value ?? "");
     }
   }
 
@@ -355,6 +354,7 @@ export default function ApplicationTracker({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "">("");
   const [sorting, setSorting] = useState<SortingState>([{ id: "updatedAt", desc: true }]);
+  const [mutationError, setMutationError] = useState<unknown | null>(null);
 
   const sort = sorting[0];
   const params: ApplicationListParams = useMemo(
@@ -379,7 +379,10 @@ export default function ApplicationTracker({
 
   const createMutation = useMutation({
     mutationFn: createApplication,
+    onMutate: () => setMutationError(null),
+    onError: (error) => setMutationError(error),
     onSuccess: () => {
+      setMutationError(null);
       onAddOpenChange?.(false);
       invalidateApplications();
     }
@@ -387,22 +390,36 @@ export default function ApplicationTracker({
 
   const updateMutation = useMutation({
     mutationFn: ({ id, input }: { id: number; input: ApplicationUpdateInput }) => updateApplication(id, input),
-    onSuccess: invalidateApplications
+    onMutate: () => setMutationError(null),
+    onError: (error) => setMutationError(error),
+    onSuccess: () => {
+      setMutationError(null);
+      invalidateApplications();
+    }
   });
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: ApplicationStatus }) => changeApplicationStatus(id, status),
-    onSuccess: invalidateApplications
+    onMutate: () => setMutationError(null),
+    onError: (error) => setMutationError(error),
+    onSuccess: () => {
+      setMutationError(null);
+      invalidateApplications();
+    }
   });
 
   const favoriteMutation = useMutation({
     mutationFn: ({ id, favorite }: { id: number; favorite: boolean }) => setApplicationFavorite(id, favorite),
-    onSuccess: invalidateApplications
+    onMutate: () => setMutationError(null),
+    onError: (error) => setMutationError(error),
+    onSuccess: () => {
+      setMutationError(null);
+      invalidateApplications();
+    }
   });
 
   const isMutating =
     createMutation.isPending || updateMutation.isPending || statusMutation.isPending || favoriteMutation.isPending;
-  const mutationError = createMutation.error ?? updateMutation.error ?? statusMutation.error ?? favoriteMutation.error;
 
   function commitUpdate(id: number, input: ApplicationUpdateInput) {
     updateMutation.mutate({ id, input });
@@ -564,6 +581,7 @@ export default function ApplicationTracker({
   });
 
   const meta = query.isLoading ? "Loading" : `${query.data?.length ?? 0} rows`;
+  const hasActiveFilters = Boolean(search.trim() || statusFilter);
 
   return (
     <WorkspacePanel title={title} meta={meta}>
@@ -606,7 +624,10 @@ export default function ApplicationTracker({
           <NewApplicationForm
             favoriteOnly={favoriteOnly}
             isSaving={createMutation.isPending}
-            onCancel={() => onAddOpenChange?.(false)}
+            onCancel={() => {
+              setMutationError(null);
+              onAddOpenChange?.(false);
+            }}
             onSubmit={(input) => createMutation.mutate(input)}
           />
         ) : null}
@@ -627,7 +648,11 @@ export default function ApplicationTracker({
           </div>
         ) : table.getRowModel().rows.length === 0 ? (
           <div className="p-4">
-            <EmptyState title={emptyTitle} detail={emptyDetail} />
+            {hasActiveFilters ? (
+              <EmptyState title="No matching applications" detail="Adjust or reset the filters to show more tracker rows." />
+            ) : (
+              <EmptyState title={emptyTitle} detail={emptyDetail} />
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
