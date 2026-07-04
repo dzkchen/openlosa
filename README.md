@@ -23,6 +23,13 @@ Start MySQL:
 docker compose up -d
 ```
 
+Wait for the `mysql` service to report `healthy` before starting the backend.
+On a first run, MySQL initialization can take a couple of minutes.
+
+```sh
+docker compose ps
+```
+
 Run the backend API:
 
 ```sh

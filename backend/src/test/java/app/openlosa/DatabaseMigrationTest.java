@@ -28,12 +28,23 @@ class DatabaseMigrationTest {
     void flywayAppliesBaselineSchema() {
         var jdbcTemplate = new JdbcTemplate(dataSource);
 
-        Integer companyTables = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'company'",
+        Integer baselineTables = jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+              AND table_name IN ('company', 'application', 'status_transition', 'tag', 'application_tag')
+            """,
             Integer.class
         );
-        Integer applicationTables = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'application'",
+        Integer applicationTagIndexes = jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = 'application_tag'
+              AND index_name = 'ix_application_tag_tag_id'
+            """,
             Integer.class
         );
         Integer flywayMigrations = jdbcTemplate.queryForObject(
@@ -41,8 +52,8 @@ class DatabaseMigrationTest {
             Integer.class
         );
 
-        assertThat(companyTables).isEqualTo(1);
-        assertThat(applicationTables).isEqualTo(1);
-        assertThat(flywayMigrations).isGreaterThanOrEqualTo(1);
+        assertThat(baselineTables).isEqualTo(5);
+        assertThat(applicationTagIndexes).isEqualTo(1);
+        assertThat(flywayMigrations).isEqualTo(1);
     }
 }
