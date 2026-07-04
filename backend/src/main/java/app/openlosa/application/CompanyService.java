@@ -69,7 +69,18 @@ public class CompanyService {
 
         var cleanedName = cleanRequired(companyName, "companyName");
         return companyRepository.findByNameIgnoreCase(cleanedName)
+            .map(company -> mergeMissingDetails(company, companyWebsite, companyNotes))
             .orElseGet(() -> companyRepository.save(new Company(cleanedName, clean(companyWebsite), clean(companyNotes))));
+    }
+
+    private Company mergeMissingDetails(Company company, String website, String notes) {
+        if (!StringUtils.hasText(company.getWebsite()) && StringUtils.hasText(website)) {
+            company.setWebsite(clean(website));
+        }
+        if (!StringUtils.hasText(company.getNotes()) && StringUtils.hasText(notes)) {
+            company.setNotes(clean(notes));
+        }
+        return company;
     }
 
     private Company requireCompany(Long id) {

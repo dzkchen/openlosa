@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,9 +16,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import app.openlosa.application.dto.ApplicationCreateRequest;
 import app.openlosa.application.dto.ApplicationFavoriteRequest;
+import app.openlosa.application.dto.ApplicationImportResponse;
 import app.openlosa.application.dto.ApplicationResponse;
 import app.openlosa.application.dto.ApplicationStatusRequest;
 import app.openlosa.application.dto.ApplicationUpdateRequest;
@@ -64,6 +67,11 @@ class ApplicationController {
     @ResponseStatus(HttpStatus.CREATED)
     ApplicationResponse create(@Valid @RequestBody ApplicationCreateRequest request) {
         return applicationService.create(request);
+    }
+
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    ApplicationImportResponse importCsv(@RequestParam("file") MultipartFile file) {
+        return applicationService.importCsv(file);
     }
 
     @PutMapping("/{id}")

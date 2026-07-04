@@ -81,6 +81,39 @@ Flyway migrations live in `backend/src/main/resources/db/migration`. Once a
 migration has been applied to a shared or persistent database, add a new
 migration instead of editing the old one.
 
+## Application CSV Import
+
+Use the Applications page's **Import CSV** action for the one-time spreadsheet
+migration. The importer uses a fixed template and does not support column
+mapping, so the header row must be exactly:
+
+```csv
+companyName,companyWebsite,companyNotes,roleTitle,postingUrl,location,status,appliedAt,source,salaryText,notes,favorite,tags
+```
+
+Example:
+
+```csv
+companyName,companyWebsite,companyNotes,roleTitle,postingUrl,location,status,appliedAt,source,salaryText,notes,favorite,tags
+OpenAI,https://openai.com,,Software Engineer Intern,https://openai.com/jobs/swe,San Francisco,APPLIED,2026-01-15,MANUAL,$60/hr,Imported from spreadsheet,true,summer-2027;priority
+Anthropic,https://anthropic.com,,ML Systems Intern,,Remote,,,,,Needs follow-up,,priority
+```
+
+Required columns: `companyName`, `roleTitle`.
+
+Optional columns can be blank. `status` defaults to `SAVED`, `source` defaults
+to `MANUAL`, and `favorite` defaults to false. Use ISO dates (`YYYY-MM-DD`) for
+`appliedAt`; leave it blank for rows whose status is `SAVED`. Status values are
+`SAVED`, `APPLIED`, `ONLINE_ASSESSMENT`, `PHONE_SCREEN`, `INTERVIEW`, `OFFER`,
+`REJECTED`, `WITHDRAWN`, `GHOSTED`. Source values are `MANUAL`, `FEED`,
+`PROSPECT`. Tags are semicolon-separated names and are created if they do not
+already exist.
+
+Fields containing commas, quotes, or line breaks must use standard CSV quoting:
+wrap the field in double quotes and write literal quotes as two double quotes.
+For example, use `"Imported from spreadsheet, needs review"` for a note with a
+comma.
+
 ## Verification
 
 Run the same checks as CI:

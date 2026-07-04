@@ -7,12 +7,14 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDate;
+import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +24,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.MySQLContainer;
@@ -322,6 +325,37 @@ class ApplicationTrackerIntegrationTest {
     }
 
     @Test
+    void statusChangeRejectsMovingAppliedApplicationBackToSaved() throws Exception {
+        long applicationId = createApplication("""
+            {
+              "companyName": "Mercury",
+              "roleTitle": "Backend Intern",
+              "status": "APPLIED",
+              "appliedAt": "2026-01-15",
+              "source": "MANUAL"
+            }
+            """);
+
+        changeStatus(applicationId, "SAVED")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail", is("appliedAt can only be set after an application has been submitted")));
+
+        String persistedStatus = jdbcTemplate.queryForObject(
+            "SELECT status FROM application WHERE id = ?",
+            String.class,
+            applicationId
+        );
+        LocalDate appliedAt = jdbcTemplate.queryForObject(
+            "SELECT applied_at FROM application WHERE id = ?",
+            LocalDate.class,
+            applicationId
+        );
+
+        assertThat(persistedStatus).isEqualTo("APPLIED");
+        assertThat(appliedAt).isEqualTo(LocalDate.parse("2026-01-15"));
+    }
+
+    @Test
     void undoStatusDeletesLatestTransitionAndRestoresPriorStatus() throws Exception {
         long applicationId = createApplication("""
             {
@@ -500,6 +534,171 @@ class ApplicationTrackerIntegrationTest {
             .andExpect(jsonPath("$[0].favorite", is(true)));
     }
 
+    @Test
+    void importsApplicationsFromFixedCsvTemplateAndWritesInitialTransitions() throws Exception {
+        var csv = """
+            companyName,companyWebsite,companyNotes,roleTitle,postingUrl,location,status,appliedAt,source,salaryText,notes,favorite,tags
+            OpenAI,https://openai.com,,Software Engineer Intern,https://openai.com/jobs/swe,San Francisco,APPLIED,2026-01-15,MANUAL,$60/hr,Imported from spreadsheet,true,summer-2027;priority
+            Anthropic,https://anthropic.com,,ML Systems Intern,,Remote,,,,,Needs follow-up,,priority
+            """;
+
+        mockMvc.perform(multipart("/api/v1/applications/import")
+                .file(csvFile(csv)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.importedCount", is(2)))
+            .andExpect(jsonPath("$.applications", hasSize(2)))
+            .andExpect(jsonPath("$.applications[0].company.name", is("OpenAI")))
+            .andExpect(jsonPath("$.applications[0].status", is("APPLIED")))
+            .andExpect(jsonPath("$.applications[0].appliedAt", is("2026-01-15")))
+            .andExpect(jsonPath("$.applications[0].favorite", is(true)))
+            .andExpect(jsonPath("$.applications[0].tags", hasSize(2)))
+            .andExpect(jsonPath("$.applications[1].company.name", is("Anthropic")))
+            .andExpect(jsonPath("$.applications[1].status", is("SAVED")))
+            .andExpect(jsonPath("$.applications[1].source", is("MANUAL")))
+            .andExpect(jsonPath("$.applications[1].tags", hasSize(1)));
+
+        Integer applications = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM application", Integer.class);
+        Integer companies = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM company", Integer.class);
+        Integer transitions = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM status_transition", Integer.class);
+        Integer tags = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tag", Integer.class);
+        Integer tagLinks = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM application_tag", Integer.class);
+        Integer matchingInitialTransitions = jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM status_transition transition
+            JOIN application application ON application.id = transition.application_id
+            WHERE transition.from_status IS NULL
+              AND transition.to_status = application.status
+            """,
+            Integer.class
+        );
+
+        assertThat(applications).isEqualTo(2);
+        assertThat(companies).isEqualTo(2);
+        assertThat(transitions).isEqualTo(2);
+        assertThat(tags).isEqualTo(2);
+        assertThat(tagLinks).isEqualTo(3);
+        assertThat(matchingInitialTransitions).isEqualTo(2);
+    }
+
+    @Test
+    void importFillsMissingCompanyDetailsForExistingCompanies() throws Exception {
+        createCompany("OpenAI", "");
+        var csv = """
+            companyName,companyWebsite,companyNotes,roleTitle,postingUrl,location,status,appliedAt,source,salaryText,notes,favorite,tags
+            OpenAI,https://openai.com,AI research lab,Software Engineer Intern,,San Francisco,APPLIED,2026-01-15,MANUAL,,Imported,true,
+            """;
+
+        mockMvc.perform(multipart("/api/v1/applications/import")
+                .file(csvFile(csv)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.importedCount", is(1)))
+            .andExpect(jsonPath("$.applications[0].company.website", is("https://openai.com")))
+            .andExpect(jsonPath("$.applications[0].company.notes", is("AI research lab")));
+
+        Integer companies = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM company", Integer.class);
+        String website = jdbcTemplate.queryForObject("SELECT website FROM company WHERE name = 'OpenAI'", String.class);
+        String notes = jdbcTemplate.queryForObject("SELECT notes FROM company WHERE name = 'OpenAI'", String.class);
+
+        assertThat(companies).isEqualTo(1);
+        assertThat(website).isEqualTo("https://openai.com");
+        assertThat(notes).isEqualTo("AI research lab");
+    }
+
+    @Test
+    void importRejectsUnexpectedCsvHeader() throws Exception {
+        var csv = """
+            company,role
+            OpenAI,Software Engineer Intern
+            """;
+
+        mockMvc.perform(multipart("/api/v1/applications/import")
+                .file(csvFile(csv)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail", is("CSV header must be: companyName,companyWebsite,companyNotes,roleTitle,postingUrl,location,status,appliedAt,source,salaryText,notes,favorite,tags")));
+
+        Integer applications = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM application", Integer.class);
+        assertThat(applications).isZero();
+    }
+
+    @Test
+    void importRejectsInvalidDate() throws Exception {
+        var csv = """
+            companyName,companyWebsite,companyNotes,roleTitle,postingUrl,location,status,appliedAt,source,salaryText,notes,favorite,tags
+            OpenAI,https://openai.com,,Software Engineer Intern,,San Francisco,APPLIED,01/15/2026,MANUAL,,Imported,true,
+            """;
+
+        assertImportRejected(csv, "Row 2 has invalid appliedAt '01/15/2026'; use YYYY-MM-DD");
+    }
+
+    @Test
+    void importRejectsInvalidEnum() throws Exception {
+        var csv = """
+            companyName,companyWebsite,companyNotes,roleTitle,postingUrl,location,status,appliedAt,source,salaryText,notes,favorite,tags
+            OpenAI,https://openai.com,,Software Engineer Intern,,San Francisco,WAITING,,MANUAL,,Imported,true,
+            """;
+
+        assertImportRejected(csv, "Row 2 has invalid status 'WAITING'; use one of: SAVED, APPLIED, ONLINE_ASSESSMENT, PHONE_SCREEN, INTERVIEW, OFFER, REJECTED, WITHDRAWN, GHOSTED");
+    }
+
+    @Test
+    void importRejectsWrongColumnCount() throws Exception {
+        var csv = """
+            companyName,companyWebsite,companyNotes,roleTitle,postingUrl,location,status,appliedAt,source,salaryText,notes,favorite,tags
+            OpenAI,https://openai.com,,Software Engineer Intern,,San Francisco,APPLIED,2026-01-15,MANUAL,,Imported, with comma,true,
+            """;
+
+        assertImportRejected(csv, "Row 2 has 14 columns; expected 13");
+    }
+
+    @Test
+    void importRejectsUnterminatedQuote() throws Exception {
+        var csv = """
+            companyName,companyWebsite,companyNotes,roleTitle,postingUrl,location,status,appliedAt,source,salaryText,notes,favorite,tags
+            OpenAI,https://openai.com,,Software Engineer Intern,,San Francisco,APPLIED,2026-01-15,MANUAL,,"Imported,true,
+            """;
+
+        assertImportRejected(csv, "CSV has an unterminated quoted field");
+    }
+
+    @Test
+    void importRejectsAppliedAtOnSavedStatusAndRollsBackEarlierRows() throws Exception {
+        var csv = """
+            companyName,companyWebsite,companyNotes,roleTitle,postingUrl,location,status,appliedAt,source,salaryText,notes,favorite,tags
+            OpenAI,https://openai.com,,Software Engineer Intern,,San Francisco,APPLIED,2026-01-15,MANUAL,,Imported,true,priority
+            Anthropic,https://anthropic.com,,ML Systems Intern,,Remote,SAVED,2026-01-16,MANUAL,,Imported,false,priority
+            """;
+
+        assertImportRejected(csv, "appliedAt can only be set after an application has been submitted");
+
+        Integer companies = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM company", Integer.class);
+        Integer transitions = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM status_transition", Integer.class);
+        Integer tags = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tag", Integer.class);
+        assertThat(companies).isZero();
+        assertThat(transitions).isZero();
+        assertThat(tags).isZero();
+    }
+
+    @Test
+    void createRejectsAppliedAtOnSavedStatus() throws Exception {
+        mockMvc.perform(post("/api/v1/applications")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "companyName": "OpenAI",
+                      "roleTitle": "Software Engineer Intern",
+                      "status": "SAVED",
+                      "appliedAt": "2026-01-15",
+                      "source": "MANUAL"
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail", is("appliedAt can only be set after an application has been submitted")));
+
+        Integer applications = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM application", Integer.class);
+        assertThat(applications).isZero();
+    }
+
     private long createCompany(String name, String website) throws Exception {
         var response = mockMvc.perform(post("/api/v1/companies")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -544,6 +743,25 @@ class ApplicationTrackerIntegrationTest {
             .getContentAsString();
 
         return readId(response);
+    }
+
+    private MockMultipartFile csvFile(String csv) {
+        return new MockMultipartFile(
+            "file",
+            "applications.csv",
+            "text/csv",
+            csv.getBytes(StandardCharsets.UTF_8)
+        );
+    }
+
+    private void assertImportRejected(String csv, String detail) throws Exception {
+        mockMvc.perform(multipart("/api/v1/applications/import")
+                .file(csvFile(csv)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail", is(detail)));
+
+        Integer applications = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM application", Integer.class);
+        assertThat(applications).isZero();
     }
 
     private org.springframework.test.web.servlet.ResultActions changeStatus(long applicationId, String toStatus) throws Exception {

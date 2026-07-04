@@ -1,7 +1,11 @@
 package app.openlosa.application;
 
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -10,8 +14,11 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import app.openlosa.application.ApplicationCsvParser.ImportedApplicationRow;
 import app.openlosa.application.dto.ApplicationCreateRequest;
+import app.openlosa.application.dto.ApplicationImportResponse;
 import app.openlosa.application.dto.ApplicationResponse;
 import app.openlosa.application.dto.ApplicationUpdateRequest;
 import app.openlosa.application.dto.StatusTransitionResponse;
@@ -88,6 +95,32 @@ public class ApplicationService {
 
     @Transactional
     public ApplicationResponse create(ApplicationCreateRequest request) {
+        return ApplicationMapper.toResponse(createApplication(request));
+    }
+
+    @Transactional
+    public ApplicationImportResponse importCsv(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BadRequestException("CSV file is required");
+        }
+
+        try (var reader = new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8)) {
+            var rows = ApplicationCsvParser.parse(reader);
+            var imported = new ArrayList<ApplicationResponse>();
+
+            for (var row : rows) {
+                var application = createApplication(row.request());
+                attachImportedTags(application, row);
+                imported.add(ApplicationMapper.toResponse(application));
+            }
+
+            return new ApplicationImportResponse(imported.size(), imported);
+        } catch (IOException exception) {
+            throw new BadRequestException("Could not read CSV file");
+        }
+    }
+
+    private JobApplication createApplication(ApplicationCreateRequest request) {
         var company = companyService.resolveCompany(
             request.companyId(),
             request.companyName(),
@@ -96,6 +129,7 @@ public class ApplicationService {
         );
         var status = request.status() == null ? ApplicationStatus.SAVED : request.status();
         var source = request.source() == null ? ApplicationSource.MANUAL : request.source();
+        validateAppliedAt(status, request.appliedAt());
         var application = new JobApplication(company, cleanRequired(request.roleTitle(), "roleTitle"), status, source);
 
         applyEditableFields(application, request.postingUrl(), request.location(), request.appliedAt(),
@@ -105,7 +139,7 @@ public class ApplicationService {
         var saved = applicationRepository.save(application);
         transitionRepository.save(new StatusTransition(saved, null, saved.getStatus()));
 
-        return ApplicationMapper.toResponse(saved);
+        return saved;
     }
 
     @Transactional
@@ -124,6 +158,12 @@ public class ApplicationService {
         }
         if (request.source() != null) {
             application.setSource(request.source());
+        }
+
+        if (request.status() != null || request.appliedAt() != null) {
+            var effectiveStatus = request.status() == null ? application.getStatus() : request.status();
+            var effectiveAppliedAt = request.appliedAt() == null ? application.getAppliedAt() : request.appliedAt();
+            validateAppliedAt(effectiveStatus, effectiveAppliedAt);
         }
 
         applyEditableFields(application, request.postingUrl(), request.location(), request.appliedAt(),
@@ -191,6 +231,7 @@ public class ApplicationService {
         }
 
         var fromStatus = application.getStatus();
+        validateAppliedAt(toStatus, application.getAppliedAt());
         application.setStatus(toStatus);
         autoFillAppliedAt(application);
         transitionRepository.save(new StatusTransition(application, fromStatus, toStatus));
@@ -199,6 +240,12 @@ public class ApplicationService {
     private void autoFillAppliedAt(JobApplication application) {
         if (application.getStatus() == ApplicationStatus.APPLIED && application.getAppliedAt() == null) {
             application.setAppliedAt(LocalDate.now(clock));
+        }
+    }
+
+    private void validateAppliedAt(ApplicationStatus status, LocalDate appliedAt) {
+        if (status == ApplicationStatus.SAVED && appliedAt != null) {
+            throw new BadRequestException("appliedAt can only be set after an application has been submitted");
         }
     }
 
@@ -218,6 +265,17 @@ public class ApplicationService {
     private Tag requireTag(Long id) {
         return tagRepository.findById(id)
             .orElseThrow(() -> new NotFoundException("Tag " + id + " was not found"));
+    }
+
+    private void attachImportedTags(JobApplication application, ImportedApplicationRow row) {
+        for (var tagName : row.tagNames()) {
+            application.getTags().add(resolveTag(tagName));
+        }
+    }
+
+    private Tag resolveTag(String name) {
+        return tagRepository.findByNameIgnoreCase(name)
+            .orElseGet(() -> tagRepository.save(new Tag(name, null)));
     }
 
     private void applyEditableFields(
