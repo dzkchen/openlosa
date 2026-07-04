@@ -153,6 +153,28 @@ class ContactIntegrationTest {
     }
 
     @Test
+    void deletingCompanyDetachesLinkedContacts() throws Exception {
+        long contactId = createContact("""
+            {
+              "companyName": "OpenAI",
+              "name": "Ada Lovelace"
+            }
+            """);
+        Long companyId = jdbcTemplate.queryForObject(
+            "SELECT company_id FROM contact WHERE id = ?",
+            Long.class,
+            contactId
+        );
+
+        mockMvc.perform(delete("/api/v1/companies/{id}", companyId))
+            .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/contacts/{id}", contactId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.company", nullValue()));
+    }
+
+    @Test
     void updateRejectsClearingAndSettingDateTogether() throws Exception {
         long contactId = createContact("""
             {

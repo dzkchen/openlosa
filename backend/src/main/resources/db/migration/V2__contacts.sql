@@ -10,7 +10,7 @@ CREATE TABLE contact (
     last_contacted_at DATE NULL,
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     PRIMARY KEY (id),
-    CONSTRAINT fk_contact_company FOREIGN KEY (company_id) REFERENCES company (id),
+    CONSTRAINT fk_contact_company FOREIGN KEY (company_id) REFERENCES company (id) ON DELETE SET NULL,
     CONSTRAINT chk_contact_relationship CHECK (
         relationship IN (
             'RECRUITER',
