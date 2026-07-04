@@ -25,15 +25,15 @@ class DatabaseMigrationTest {
     private DataSource dataSource;
 
     @Test
-    void flywayAppliesBaselineSchema() {
+    void flywayAppliesCurrentSchema() {
         var jdbcTemplate = new JdbcTemplate(dataSource);
 
-        Integer baselineTables = jdbcTemplate.queryForObject(
+        Integer tables = jdbcTemplate.queryForObject(
             """
             SELECT COUNT(*)
             FROM information_schema.tables
             WHERE table_schema = DATABASE()
-              AND table_name IN ('company', 'application', 'status_transition', 'tag', 'application_tag')
+              AND table_name IN ('company', 'application', 'status_transition', 'tag', 'application_tag', 'contact')
             """,
             Integer.class
         );
@@ -52,8 +52,8 @@ class DatabaseMigrationTest {
             Integer.class
         );
 
-        assertThat(baselineTables).isEqualTo(5);
+        assertThat(tables).isEqualTo(6);
         assertThat(applicationTagIndexes).isEqualTo(1);
-        assertThat(flywayMigrations).isEqualTo(1);
+        assertThat(flywayMigrations).isEqualTo(2);
     }
 }
