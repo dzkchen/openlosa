@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.LocalDate;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,6 +57,11 @@ class ApplicationTrackerIntegrationTest {
         jdbcTemplate.update("DELETE FROM application");
         jdbcTemplate.update("DELETE FROM tag");
         jdbcTemplate.update("DELETE FROM company");
+    }
+
+    @AfterEach
+    void restoreSchema() {
+        dropFailingTransitionCheck();
     }
 
     @Test
