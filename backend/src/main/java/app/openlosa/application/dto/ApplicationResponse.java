@@ -2,6 +2,7 @@ package app.openlosa.application.dto;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import app.openlosa.application.ApplicationSource;
 import app.openlosa.application.ApplicationStatus;
@@ -18,6 +19,7 @@ public record ApplicationResponse(
     String salaryText,
     String notes,
     boolean favorite,
+    List<TagResponse> tags,
     LocalDateTime createdAt,
     LocalDateTime updatedAt
 ) {

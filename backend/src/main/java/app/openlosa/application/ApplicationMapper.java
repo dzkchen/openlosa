@@ -3,6 +3,7 @@ package app.openlosa.application;
 import app.openlosa.application.dto.ApplicationResponse;
 import app.openlosa.application.dto.CompanyResponse;
 import app.openlosa.application.dto.StatusTransitionResponse;
+import app.openlosa.application.dto.TagResponse;
 
 final class ApplicationMapper {
 
@@ -32,8 +33,19 @@ final class ApplicationMapper {
             application.getSalaryText(),
             application.getNotes(),
             application.isFavorite(),
+            application.getTags().stream()
+                .map(ApplicationMapper::toResponse)
+                .toList(),
             application.getCreatedAt(),
             application.getUpdatedAt()
+        );
+    }
+
+    static TagResponse toResponse(Tag tag) {
+        return new TagResponse(
+            tag.getId(),
+            tag.getName(),
+            tag.getColor()
         );
     }
 

@@ -2,6 +2,8 @@ package app.openlosa.application;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -15,7 +17,10 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 
 @Entity
@@ -57,6 +62,15 @@ public class JobApplication {
 
     @Column(nullable = false)
     private boolean favorite;
+
+    @ManyToMany
+    @JoinTable(
+        name = "application_tag",
+        joinColumns = @JoinColumn(name = "application_id"),
+        inverseJoinColumns = @JoinColumn(name = "tag_id")
+    )
+    @OrderBy("name ASC")
+    private Set<Tag> tags = new LinkedHashSet<>();
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -158,6 +172,10 @@ public class JobApplication {
 
     public void setFavorite(boolean favorite) {
         this.favorite = favorite;
+    }
+
+    public Set<Tag> getTags() {
+        return tags;
     }
 
     public LocalDateTime getCreatedAt() {

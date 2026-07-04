@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import app.openlosa.application.dto.ApplicationCreateRequest;
+import app.openlosa.application.dto.ApplicationFavoriteRequest;
 import app.openlosa.application.dto.ApplicationResponse;
 import app.openlosa.application.dto.ApplicationStatusRequest;
 import app.openlosa.application.dto.ApplicationUpdateRequest;
@@ -73,6 +74,26 @@ class ApplicationController {
     @PostMapping("/{id}/status")
     ApplicationResponse changeStatus(@PathVariable Long id, @Valid @RequestBody ApplicationStatusRequest request) {
         return applicationService.changeStatus(id, request.toStatus());
+    }
+
+    @PostMapping("/{id}/status/undo")
+    ApplicationResponse undoStatus(@PathVariable Long id) {
+        return applicationService.undoStatus(id);
+    }
+
+    @PutMapping("/{id}/favorite")
+    ApplicationResponse setFavorite(@PathVariable Long id, @Valid @RequestBody ApplicationFavoriteRequest request) {
+        return applicationService.setFavorite(id, request.favorite());
+    }
+
+    @PostMapping("/{id}/tags/{tagId}")
+    ApplicationResponse attachTag(@PathVariable Long id, @PathVariable Long tagId) {
+        return applicationService.attachTag(id, tagId);
+    }
+
+    @DeleteMapping("/{id}/tags/{tagId}")
+    ApplicationResponse detachTag(@PathVariable Long id, @PathVariable Long tagId) {
+        return applicationService.detachTag(id, tagId);
     }
 
     @DeleteMapping("/{id}")

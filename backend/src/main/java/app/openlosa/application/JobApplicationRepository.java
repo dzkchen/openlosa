@@ -11,6 +11,6 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 public interface JobApplicationRepository extends JpaRepository<JobApplication, Long>, JpaSpecificationExecutor<JobApplication> {
 
     @Override
-    @EntityGraph(attributePaths = "company")
+    @EntityGraph(attributePaths = {"company", "tags"})
     List<JobApplication> findAll(Specification<JobApplication> spec, Sort sort);
 }
