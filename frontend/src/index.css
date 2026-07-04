@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --color-canvas: 7 8 13;
+    --color-surface: 13 16 25;
+    --color-elevated: 20 24 35;
+    --color-line: 42 49 64;
+    --color-text: 238 241 247;
+    --color-muted: 148 158 177;
+    --color-soft: 99 113 138;
+    --color-accent: 126 145 255;
+    --color-accent-2: 41 211 194;
+    --color-good: 57 196 132;
+    --color-warn: 235 181 80;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(circle at top left, rgb(var(--color-accent) / 0.09), transparent 34rem),
+      linear-gradient(135deg, rgb(8 9 15), rgb(var(--color-canvas)));
+    color: rgb(var(--color-text));
+    font-family:
+      Inter,
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  ::selection {
+    background: rgb(var(--color-accent) / 0.28);
+  }
+}
