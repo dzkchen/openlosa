@@ -96,12 +96,13 @@ function EditableTextCell({ disabled, onCommit, placeholder, value }: EditableTe
 }
 
 type DateCellProps = {
+  clearable?: boolean;
   disabled?: boolean;
   onCommit: (value: string | null) => void;
   value: string | null;
 };
 
-function DateCell({ disabled, onCommit, value }: DateCellProps) {
+function DateCell({ clearable = true, disabled, onCommit, value }: DateCellProps) {
   const [draft, setDraft] = useState(value ?? "");
 
   useEffect(() => {
@@ -111,7 +112,11 @@ function DateCell({ disabled, onCommit, value }: DateCellProps) {
   function commit() {
     if (!draft) {
       if (value !== null) {
-        onCommit(null);
+        if (clearable) {
+          onCommit(null);
+        } else {
+          setDraft(value);
+        }
       }
       return;
     }
@@ -502,6 +507,7 @@ export default function OutreachPage() {
         header: "Sent",
         cell: ({ row }) => (
           <DateCell
+            clearable={false}
             value={row.original.sentAt}
             disabled={updateMutation.isPending || row.original.status === "TO_SEND"}
             onCommit={(sentAt) =>

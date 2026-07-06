@@ -9,6 +9,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -125,7 +126,7 @@ public class OutreachService {
     @Transactional
     public OutreachResponse update(Long id, OutreachUpdateRequest request) {
         var outreach = requireOutreach(id);
-        applyAssociations(
+        var contactChanged = applyAssociations(
             outreach,
             request.contactId(),
             Boolean.TRUE.equals(request.clearContact()),
@@ -157,18 +158,25 @@ public class OutreachService {
         if (clearsSentAt && request.sentAt() != null) {
             throw new BadRequestException("sentAt cannot be set and cleared in the same request");
         }
+        var targetStatus = request.status() == null ? outreach.getStatus() : request.status();
+        if (clearsSentAt && targetStatus != TO_SEND) {
+            throw new BadRequestException("sentAt is required once outreach has been sent");
+        }
         if (request.status() != null) {
             moveStatus(outreach, request.status(), request.sentAt());
-        } else if (clearsSentAt) {
-            if (outreach.getStatus() != TO_SEND) {
-                throw new BadRequestException("sentAt is required once outreach has been sent");
+            if (clearsSentAt) {
+                outreach.setSentAt(null);
             }
+        } else if (clearsSentAt) {
             outreach.setSentAt(null);
         } else if (request.sentAt() != null) {
             if (outreach.getStatus() == TO_SEND) {
                 throw new BadRequestException("sentAt requires status SENT");
             }
             outreach.setSentAt(request.sentAt());
+            touchContactLastContacted(outreach);
+        }
+        if (contactChanged) {
             touchContactLastContacted(outreach);
         }
 
@@ -180,7 +188,7 @@ public class OutreachService {
         outreachRepository.delete(requireOutreach(id));
     }
 
-    private void applyAssociations(
+    private boolean applyAssociations(
         Outreach outreach,
         Long contactId,
         boolean clearContact,
@@ -201,6 +209,8 @@ public class OutreachService {
         if (clearApplication && applicationId != null) {
             throw new BadRequestException("application cannot be set and cleared in the same request");
         }
+
+        var previousContactId = outreach.getContact() == null ? null : outreach.getContact().getId();
 
         if (clearContact) {
             outreach.setContact(null);
@@ -227,6 +237,9 @@ public class OutreachService {
                 outreach.setCompany(application.getCompany());
             }
         }
+
+        var nextContactId = outreach.getContact() == null ? null : outreach.getContact().getId();
+        return !Objects.equals(previousContactId, nextContactId);
     }
 
     private void moveStatus(Outreach outreach, OutreachStatus toStatus, LocalDate requestedSentAt) {

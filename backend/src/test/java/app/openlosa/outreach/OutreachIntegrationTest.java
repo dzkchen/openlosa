@@ -174,6 +174,65 @@ class OutreachIntegrationTest {
         assertThat(lastContactedAt).isEqualTo(LocalDate.parse("2026-07-20"));
     }
 
+    @Test
+    void assigningContactToAlreadySentOutreachTouchesContactLastContacted() throws Exception {
+        long contactId = createContact("""
+            {
+              "name": "Katherine Johnson"
+            }
+            """);
+
+        long outreachId = createOutreach("""
+            {
+              "status": "SENT",
+              "sentAt": "2026-07-04"
+            }
+            """);
+
+        mockMvc.perform(put("/api/v1/outreach/{id}", outreachId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "contactId": %d
+                    }
+                    """.formatted(contactId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.contact.name", is("Katherine Johnson")))
+            .andExpect(jsonPath("$.sentAt", is("2026-07-04")));
+
+        LocalDate lastContactedAt = jdbcTemplate.queryForObject(
+            "SELECT last_contacted_at FROM contact WHERE id = ?",
+            LocalDate.class,
+            contactId
+        );
+        assertThat(lastContactedAt).isEqualTo(LocalDate.parse("2026-07-04"));
+    }
+
+    @Test
+    void clearSentAtWithSentStatusIsRejected() throws Exception {
+        long outreachId = createOutreach("""
+            {
+              "status": "SENT",
+              "sentAt": "2026-07-04"
+            }
+            """);
+
+        mockMvc.perform(put("/api/v1/outreach/{id}", outreachId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "status": "SENT",
+                      "clearSentAt": true
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail", is("sentAt is required once outreach has been sent")));
+
+        mockMvc.perform(get("/api/v1/outreach/{id}", outreachId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.sentAt", is("2026-07-04")));
+    }
+
     private long createContact(String body) throws Exception {
         String response = mockMvc.perform(post("/api/v1/contacts")
                 .contentType(MediaType.APPLICATION_JSON)
