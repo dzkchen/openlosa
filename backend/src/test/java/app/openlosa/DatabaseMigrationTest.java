@@ -33,7 +33,7 @@ class DatabaseMigrationTest {
             SELECT COUNT(*)
             FROM information_schema.tables
             WHERE table_schema = DATABASE()
-              AND table_name IN ('company', 'application', 'status_transition', 'tag', 'application_tag', 'contact')
+              AND table_name IN ('company', 'application', 'status_transition', 'tag', 'application_tag', 'contact', 'outreach')
             """,
             Integer.class
         );
@@ -52,8 +52,20 @@ class DatabaseMigrationTest {
             Integer.class
         );
 
-        assertThat(tables).isEqualTo(6);
+        Integer outreachIndexes = jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = 'outreach'
+              AND index_name IN ('ix_outreach_contact_id', 'ix_outreach_status', 'ix_outreach_follow_up_by')
+            """,
+            Integer.class
+        );
+
+        assertThat(tables).isEqualTo(7);
         assertThat(applicationTagIndexes).isEqualTo(1);
-        assertThat(flywayMigrations).isEqualTo(2);
+        assertThat(outreachIndexes).isEqualTo(3);
+        assertThat(flywayMigrations).isEqualTo(3);
     }
 }
