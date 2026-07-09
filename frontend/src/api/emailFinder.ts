@@ -64,7 +64,7 @@ type ProblemDetail = {
 
 async function readError(response: Response) {
   const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
+  if (contentType.includes("json")) {
     const body = (await response.json()) as ProblemDetail;
     return body.detail || body.title || `Request failed with ${response.status}`;
   }

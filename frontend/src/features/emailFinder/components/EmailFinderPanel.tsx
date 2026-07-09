@@ -45,8 +45,13 @@ function buildErrorMessage(error: unknown) {
 function sidecarFriendlyMessage(error: unknown) {
   const message = buildErrorMessage(error);
   const normalized = message.toLowerCase();
-  if (normalized.includes("unavailable") || normalized.includes("timed out")) {
-    return "Email Finder sidecar is unavailable or timed out.";
+  if (normalized.includes("sidecar")) {
+    if (normalized.includes("unavailable") || normalized.includes("timed out")) {
+      return "Email Finder sidecar is unavailable or timed out. Start the email profile, then try again.";
+    }
+    if (normalized.includes("failed") || normalized.includes("invalid response") || normalized.includes("empty response")) {
+      return "Email Finder sidecar failed. Check the sidecar logs, then try again.";
+    }
   }
   return message;
 }
@@ -71,8 +76,8 @@ function CandidateMeta({ candidate }: { candidate: EmailCandidate }) {
   const items = [
     candidate.founder ? `For ${candidate.founder}` : null,
     candidate.mxHost ? `MX ${candidate.mxHost}` : null,
-    candidate.smtpCode ? `SMTP ${candidate.smtpCode}` : null,
-    candidate.latencyMs ? `${candidate.latencyMs} ms` : null,
+    candidate.smtpCode !== null ? `SMTP ${candidate.smtpCode}` : null,
+    candidate.latencyMs !== null ? `${candidate.latencyMs} ms` : null,
     candidate.catchAllDomain ? "Catch-all domain" : null
   ].filter(Boolean);
 
@@ -300,7 +305,7 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
 
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <p className="text-sm leading-6 text-muted">
-              SMTP probes may be blocked on port 25/587; catch-all and unknown results are ranked guesses, not guarantees.
+              SMTP probes may be blocked on port 25; catch-all and unknown results are ranked guesses, not guarantees.
               {selectedContact?.email ? ` Current email: ${selectedContact.email}.` : ""}
             </p>
             <button
@@ -392,7 +397,7 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
         {toastMessage ? (
           <div
             role="alert"
-            className="fixed bottom-5 right-5 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-warn/30 bg-surface px-4 py-3 text-sm text-warn shadow-2xl"
+            className="fixed bottom-5 left-4 right-4 z-50 flex items-start gap-3 rounded-lg border border-warn/30 bg-surface px-4 py-3 text-sm text-warn shadow-2xl sm:left-auto sm:max-w-sm"
           >
             <span className="leading-6">{toastMessage}</span>
             <button
