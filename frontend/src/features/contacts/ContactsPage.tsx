@@ -1,4 +1,4 @@
-import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   flexRender,
@@ -23,6 +23,7 @@ import {
 import EmptyState from "../../components/layout/EmptyState";
 import PageHeader from "../../components/layout/PageHeader";
 import WorkspacePanel from "../../components/layout/WorkspacePanel";
+import EmailFinderPanel, { type EmailFinderLaunch } from "../emailFinder/components/EmailFinderPanel";
 
 const relationshipLabels: Record<ContactRelationship, string> = {
   RECRUITER: "Recruiter",
@@ -297,11 +298,13 @@ function buildMutationMessage(error: unknown) {
 
 export default function ContactsPage() {
   const queryClient = useQueryClient();
+  const finderPanelRef = useRef<HTMLDivElement>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [relationshipFilter, setRelationshipFilter] = useState<ContactRelationship | "">("");
   const [sorting, setSorting] = useState<SortingState>([{ id: "createdAt", desc: true }]);
   const [mutationError, setMutationError] = useState<unknown | null>(null);
+  const [finderLaunch, setFinderLaunch] = useState<EmailFinderLaunch | null>(null);
 
   const sort = sorting[0];
   const params = useMemo(
@@ -317,6 +320,10 @@ export default function ContactsPage() {
   const query = useQuery({
     queryKey: contactsQueryKey(params),
     queryFn: () => listContacts(params)
+  });
+  const allContactsQuery = useQuery({
+    queryKey: contactsQueryKey({ sort: "name", dir: "asc" }),
+    queryFn: () => listContacts({ sort: "name", dir: "asc" })
   });
 
   function invalidateContacts() {
@@ -359,6 +366,16 @@ export default function ContactsPage() {
   function commitUpdate(id: number, input: ContactUpdateInput) {
     updateMutation.mutate({ id, input });
   }
+
+  const launchEmailFinder = useCallback((contact: Contact) => {
+    setFinderLaunch({
+      key: Date.now(),
+      contactId: contact.id,
+      personName: contact.name,
+      companyUrl: contact.company?.website ?? ""
+    });
+    requestAnimationFrame(() => finderPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, []);
 
   const columns = useMemo<ColumnDef<Contact>[]>(
     () => [
@@ -482,18 +499,27 @@ export default function ContactsPage() {
         header: "",
         enableSorting: false,
         cell: ({ row }) => (
-          <button
-            type="button"
-            disabled={deleteMutation.isPending}
-            onClick={() => deleteMutation.mutate(row.original.id)}
-            className="h-8 rounded-md border border-line/70 px-2 text-xs font-semibold text-muted transition hover:border-warn/60 hover:bg-warn/10 hover:text-warn disabled:cursor-wait disabled:opacity-60"
-          >
-            Delete
-          </button>
+          <div className="flex min-w-44 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => launchEmailFinder(row.original)}
+              className="h-8 rounded-md border border-accent/60 px-2 text-xs font-semibold text-accent transition hover:bg-accent/10"
+            >
+              Find email
+            </button>
+            <button
+              type="button"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate(row.original.id)}
+              className="h-8 rounded-md border border-line/70 px-2 text-xs font-semibold text-muted transition hover:border-warn/60 hover:bg-warn/10 hover:text-warn disabled:cursor-wait disabled:opacity-60"
+            >
+              Delete
+            </button>
+          </div>
         )
       }
     ],
-    [deleteMutation, updateMutation]
+    [deleteMutation, launchEmailFinder, updateMutation]
   );
 
   const table = useReactTable({
@@ -524,6 +550,13 @@ export default function ContactsPage() {
           setAddOpen((open) => !open);
         }}
       />
+      <div ref={finderPanelRef}>
+        <EmailFinderPanel
+          contacts={allContactsQuery.data ?? []}
+          contactsLoading={allContactsQuery.isLoading}
+          launch={finderLaunch}
+        />
+      </div>
       <WorkspacePanel title="Contacts" meta={meta}>
         <div className="-m-4 overflow-hidden rounded-lg border border-line/70">
           <div className="flex flex-col gap-3 border-b border-line/70 bg-surface/80 p-4 lg:flex-row lg:items-center lg:justify-between">

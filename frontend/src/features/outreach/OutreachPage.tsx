@@ -1,4 +1,4 @@
-import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   flexRender,
@@ -28,6 +28,7 @@ import {
 import EmptyState from "../../components/layout/EmptyState";
 import PageHeader from "../../components/layout/PageHeader";
 import WorkspacePanel from "../../components/layout/WorkspacePanel";
+import EmailFinderPanel, { type EmailFinderLaunch } from "../emailFinder/components/EmailFinderPanel";
 import DueTodayList from "./components/DueTodayList";
 
 const typeLabels: Record<OutreachType, string> = {
@@ -362,12 +363,14 @@ function buildMutationMessage(error: unknown) {
 
 export default function OutreachPage() {
   const queryClient = useQueryClient();
+  const finderPanelRef = useRef<HTMLDivElement>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<OutreachStatus | "">("");
   const [typeFilter, setTypeFilter] = useState<OutreachType | "">("");
   const [sorting, setSorting] = useState<SortingState>([{ id: "createdAt", desc: true }]);
   const [mutationError, setMutationError] = useState<unknown | null>(null);
+  const [finderLaunch, setFinderLaunch] = useState<EmailFinderLaunch | null>(null);
 
   const sort = sorting[0];
   const params = useMemo(
@@ -434,6 +437,19 @@ export default function OutreachPage() {
   function commitUpdate(id: number, input: OutreachUpdateInput) {
     updateMutation.mutate({ id, input });
   }
+
+  const launchEmailFinder = useCallback((outreach: Outreach) => {
+    if (!outreach.contact) {
+      return;
+    }
+    setFinderLaunch({
+      key: Date.now(),
+      contactId: outreach.contact.id,
+      personName: outreach.contact.name,
+      companyUrl: outreach.contact.company?.website ?? outreach.company?.website ?? ""
+    });
+    requestAnimationFrame(() => finderPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, []);
 
   const columns = useMemo<ColumnDef<Outreach>[]>(
     () => [
@@ -561,18 +577,28 @@ export default function OutreachPage() {
         header: "",
         enableSorting: false,
         cell: ({ row }) => (
-          <button
-            type="button"
-            disabled={deleteMutation.isPending}
-            onClick={() => deleteMutation.mutate(row.original.id)}
-            className="h-8 rounded-md border border-line/70 px-2 text-xs font-semibold text-muted transition hover:border-warn/60 hover:bg-warn/10 hover:text-warn disabled:cursor-wait disabled:opacity-60"
-          >
-            Delete
-          </button>
+          <div className="flex min-w-44 items-center gap-2">
+            <button
+              type="button"
+              disabled={!row.original.contact}
+              onClick={() => launchEmailFinder(row.original)}
+              className="h-8 rounded-md border border-accent/60 px-2 text-xs font-semibold text-accent transition hover:bg-accent/10 disabled:cursor-not-allowed disabled:border-line/70 disabled:text-soft"
+            >
+              Find email
+            </button>
+            <button
+              type="button"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate(row.original.id)}
+              className="h-8 rounded-md border border-line/70 px-2 text-xs font-semibold text-muted transition hover:border-warn/60 hover:bg-warn/10 hover:text-warn disabled:cursor-wait disabled:opacity-60"
+            >
+              Delete
+            </button>
+          </div>
         )
       }
     ],
-    [contacts, deleteMutation, updateMutation]
+    [contacts, deleteMutation, launchEmailFinder, updateMutation]
   );
 
   const table = useReactTable({
@@ -610,6 +636,11 @@ export default function OutreachPage() {
         disabled={updateMutation.isPending}
         onUpdate={commitUpdate}
       />
+      {finderLaunch ? (
+        <div ref={finderPanelRef}>
+          <EmailFinderPanel contacts={contacts} contactsLoading={contactsQuery.isLoading} launch={finderLaunch} />
+        </div>
+      ) : null}
       <WorkspacePanel title="Outreach" meta={meta}>
         <div className="-m-4 overflow-hidden rounded-lg border border-line/70">
           <div className="flex flex-col gap-3 border-b border-line/70 bg-surface/80 p-4 lg:flex-row lg:items-center lg:justify-between">
