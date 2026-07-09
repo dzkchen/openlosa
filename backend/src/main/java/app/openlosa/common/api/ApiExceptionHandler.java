@@ -23,6 +23,11 @@ class ApiExceptionHandler {
         return problem(HttpStatus.BAD_REQUEST, exception.getMessage());
     }
 
+    @ExceptionHandler(UpstreamServiceException.class)
+    ProblemDetail handleUpstreamService(UpstreamServiceException exception) {
+        return problem(HttpStatus.BAD_GATEWAY, exception.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ProblemDetail handleValidation(MethodArgumentNotValidException exception) {
         var firstError = exception.getBindingResult().getFieldErrors().stream()

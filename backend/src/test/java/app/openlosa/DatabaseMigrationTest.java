@@ -42,7 +42,8 @@ class DatabaseMigrationTest {
                   'contact',
                   'outreach',
                   'prospect',
-                  'prospect_tag'
+                  'prospect_tag',
+                  'email_lookup'
               )
             """,
             Integer.class
@@ -82,11 +83,26 @@ class DatabaseMigrationTest {
             """,
             Integer.class
         );
+        Integer emailLookupIndexes = jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = 'email_lookup'
+              AND index_name IN (
+                  'ix_email_lookup_contact_id',
+                  'ix_email_lookup_chosen_outreach_id',
+                  'ix_email_lookup_created_at'
+              )
+            """,
+            Integer.class
+        );
 
-        assertThat(tables).isEqualTo(9);
+        assertThat(tables).isEqualTo(10);
         assertThat(applicationTagIndexes).isEqualTo(1);
         assertThat(outreachIndexes).isEqualTo(3);
         assertThat(prospectIndexes).isEqualTo(3);
-        assertThat(flywayMigrations).isEqualTo(4);
+        assertThat(emailLookupIndexes).isEqualTo(3);
+        assertThat(flywayMigrations).isEqualTo(5);
     }
 }
