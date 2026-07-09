@@ -486,6 +486,7 @@ export default function ProspectsPage() {
       setPromotingProspect(null);
       invalidateProspects();
       invalidateApplications();
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     }
   });
 

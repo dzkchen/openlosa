@@ -338,7 +338,9 @@ class ApplicationTrackerIntegrationTest {
 
         changeStatus(applicationId, "SAVED")
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.detail", is("appliedAt can only be set after an application has been submitted")));
+            .andExpect(jsonPath("$.detail", is(
+                "Application statuses move forward only; use undo to correct the latest status change"
+            )));
 
         String persistedStatus = jdbcTemplate.queryForObject(
             "SELECT status FROM application WHERE id = ?",
@@ -353,6 +355,38 @@ class ApplicationTrackerIntegrationTest {
 
         assertThat(persistedStatus).isEqualTo("APPLIED");
         assertThat(appliedAt).isEqualTo(LocalDate.parse("2026-01-15"));
+    }
+
+    @Test
+    void statusChangeRejectsLeavingTerminalStatus() throws Exception {
+        long applicationId = createApplication("""
+            {
+              "companyName": "Mercury",
+              "roleTitle": "Backend Intern",
+              "status": "REJECTED",
+              "source": "MANUAL"
+            }
+            """);
+
+        changeStatus(applicationId, "INTERVIEW")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail", is(
+                "Application statuses move forward only; use undo to correct the latest status change"
+            )));
+
+        String persistedStatus = jdbcTemplate.queryForObject(
+            "SELECT status FROM application WHERE id = ?",
+            String.class,
+            applicationId
+        );
+        Integer transitions = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM status_transition WHERE application_id = ?",
+            Integer.class,
+            applicationId
+        );
+
+        assertThat(persistedStatus).isEqualTo("REJECTED");
+        assertThat(transitions).isEqualTo(1);
     }
 
     @Test

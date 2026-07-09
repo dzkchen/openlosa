@@ -136,6 +136,12 @@ export async function changeApplicationStatus(id: number, toStatus: ApplicationS
   });
 }
 
+export async function undoApplicationStatus(id: number) {
+  return apiRequest<JobApplication>(`/api/v1/applications/${id}/status/undo`, {
+    method: "POST"
+  });
+}
+
 export async function setApplicationFavorite(id: number, favorite: boolean) {
   return apiRequest<JobApplication>(`/api/v1/applications/${id}/favorite`, {
     method: "PUT",

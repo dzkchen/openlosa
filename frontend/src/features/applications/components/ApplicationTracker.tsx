@@ -15,6 +15,7 @@ import {
   createApplication,
   listApplications,
   setApplicationFavorite,
+  undoApplicationStatus,
   updateApplication,
   type ApplicationListParams,
   type ApplicationSortField,
@@ -43,6 +44,24 @@ const sourceLabels: Record<ApplicationSource, string> = {
   FEED: "Feed",
   PROSPECT: "Prospect"
 };
+
+const pipelineStatuses: readonly ApplicationStatus[] = [
+  "SAVED",
+  "APPLIED",
+  "ONLINE_ASSESSMENT",
+  "PHONE_SCREEN",
+  "INTERVIEW",
+  "OFFER"
+];
+const terminalStatuses: readonly ApplicationStatus[] = ["REJECTED", "WITHDRAWN", "GHOSTED"];
+
+function availableStatusOptions(current: ApplicationStatus) {
+  const currentIndex = pipelineStatuses.indexOf(current);
+  if (currentIndex === -1) {
+    return [current];
+  }
+  return [current, ...pipelineStatuses.slice(currentIndex + 1), ...terminalStatuses];
+}
 
 type ApplicationTrackerProps = {
   addOpen?: boolean;
@@ -383,6 +402,10 @@ export default function ApplicationTracker({
     void queryClient.invalidateQueries({ queryKey: ["prospects"] });
   }
 
+  function invalidateDashboard() {
+    void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  }
+
   const createMutation = useMutation({
     mutationFn: createApplication,
     onMutate: () => setMutationError(null),
@@ -392,6 +415,7 @@ export default function ApplicationTracker({
       onAddOpenChange?.(false);
       invalidateApplications();
       invalidateProspects();
+      invalidateDashboard();
     }
   });
 
@@ -403,6 +427,7 @@ export default function ApplicationTracker({
       setMutationError(null);
       invalidateApplications();
       invalidateProspects();
+      invalidateDashboard();
     }
   });
 
@@ -414,6 +439,19 @@ export default function ApplicationTracker({
       setMutationError(null);
       invalidateApplications();
       invalidateProspects();
+      invalidateDashboard();
+    }
+  });
+
+  const undoStatusMutation = useMutation({
+    mutationFn: undoApplicationStatus,
+    onMutate: () => setMutationError(null),
+    onError: (error) => setMutationError(error),
+    onSuccess: () => {
+      setMutationError(null);
+      invalidateApplications();
+      invalidateProspects();
+      invalidateDashboard();
     }
   });
 
@@ -428,7 +466,11 @@ export default function ApplicationTracker({
   });
 
   const isMutating =
-    createMutation.isPending || updateMutation.isPending || statusMutation.isPending || favoriteMutation.isPending;
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    statusMutation.isPending ||
+    undoStatusMutation.isPending ||
+    favoriteMutation.isPending;
 
   function commitUpdate(id: number, input: ApplicationUpdateInput) {
     updateMutation.mutate({ id, input });
@@ -483,17 +525,29 @@ export default function ApplicationTracker({
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => (
-          <SelectCell
-            value={row.original.status}
-            labels={statusLabels}
-            options={applicationStatuses}
-            disabled={statusMutation.isPending}
-            onCommit={(status) => {
-              if (status !== row.original.status) {
-                statusMutation.mutate({ id: row.original.id, status });
-              }
-            }}
-          />
+          <div className="flex min-w-56 items-center gap-1">
+            <SelectCell
+              value={row.original.status}
+              labels={statusLabels}
+              options={availableStatusOptions(row.original.status)}
+              disabled={statusMutation.isPending || undoStatusMutation.isPending}
+              onCommit={(status) => {
+                if (status !== row.original.status) {
+                  statusMutation.mutate({ id: row.original.id, status });
+                }
+              }}
+            />
+            <button
+              type="button"
+              disabled={statusMutation.isPending || undoStatusMutation.isPending}
+              onClick={() => undoStatusMutation.mutate(row.original.id)}
+              aria-label={`Undo latest status change for ${row.original.company.name} ${row.original.roleTitle}`}
+              title="Undo latest status change"
+              className="h-8 rounded-md border border-line/70 px-2 text-xs font-semibold text-muted transition hover:border-accent/60 hover:bg-accent/10 hover:text-text disabled:cursor-wait disabled:opacity-60"
+            >
+              Undo
+            </button>
+          </div>
         )
       },
       {
@@ -575,7 +629,7 @@ export default function ApplicationTracker({
         cell: ({ row }) => <span className="whitespace-nowrap px-2 text-sm text-muted">{formatDate(row.original.updatedAt.slice(0, 10))}</span>
       }
     ],
-    [favoriteMutation, statusMutation, updateMutation]
+    [favoriteMutation, statusMutation, undoStatusMutation, updateMutation]
   );
 
   const table = useReactTable({

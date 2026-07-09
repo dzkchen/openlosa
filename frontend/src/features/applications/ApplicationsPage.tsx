@@ -24,6 +24,7 @@ export default function ApplicationsPage() {
       setImportError(null);
       setImportMessage(`Imported ${result.importedCount} application${result.importedCount === 1 ? "" : "s"}.`);
       void queryClient.invalidateQueries({ queryKey: ["applications"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     }
   });
 

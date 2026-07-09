@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -40,6 +41,19 @@ public class ApplicationService {
         "favorite", "favorite",
         "createdAt", "createdAt",
         "updatedAt", "updatedAt"
+    );
+    private static final List<ApplicationStatus> PIPELINE_ORDER = List.of(
+        ApplicationStatus.SAVED,
+        ApplicationStatus.APPLIED,
+        ApplicationStatus.ONLINE_ASSESSMENT,
+        ApplicationStatus.PHONE_SCREEN,
+        ApplicationStatus.INTERVIEW,
+        ApplicationStatus.OFFER
+    );
+    private static final Set<ApplicationStatus> TERMINAL_STATUSES = Set.of(
+        ApplicationStatus.REJECTED,
+        ApplicationStatus.WITHDRAWN,
+        ApplicationStatus.GHOSTED
     );
 
     private final JobApplicationRepository applicationRepository;
@@ -275,10 +289,20 @@ public class ApplicationService {
         }
 
         var fromStatus = application.getStatus();
+        validateForwardTransition(fromStatus, toStatus);
         validateAppliedAt(toStatus, application.getAppliedAt());
         application.setStatus(toStatus);
         autoFillAppliedAt(application);
         transitionRepository.save(new StatusTransition(application, fromStatus, toStatus));
+    }
+
+    private void validateForwardTransition(ApplicationStatus fromStatus, ApplicationStatus toStatus) {
+        var movesForward = PIPELINE_ORDER.indexOf(toStatus) > PIPELINE_ORDER.indexOf(fromStatus);
+        if (!TERMINAL_STATUSES.contains(fromStatus) && (TERMINAL_STATUSES.contains(toStatus) || movesForward)) {
+            return;
+        }
+
+        throw new BadRequestException("Application statuses move forward only; use undo to correct the latest status change");
     }
 
     private void autoFillAppliedAt(JobApplication application) {
