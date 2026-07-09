@@ -1,5 +1,6 @@
 import type { Company } from "./applications";
 import type { Contact } from "./contacts";
+import { apiRequest, apiRequestAllPages, appendQueryParam } from "./client";
 
 export const outreachTypes = ["COLD_EMAIL", "LINKEDIN_DM", "REFERRAL_ASK", "OTHER"] as const;
 export const outreachStatuses = ["TO_SEND", "SENT", "REPLIED", "GHOSTED"] as const;
@@ -44,6 +45,8 @@ export type OutreachListParams = {
   type?: OutreachType;
   sort?: OutreachSortField;
   dir?: "asc" | "desc";
+  page?: number;
+  size?: number;
 };
 
 export type OutreachCreateInput = {
@@ -67,50 +70,6 @@ export type OutreachUpdateInput = Partial<OutreachCreateInput> & {
   clearFollowUpBy?: boolean;
 };
 
-type ProblemDetail = {
-  title?: string;
-  detail?: string;
-  status?: number;
-};
-
-async function readError(response: Response) {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    const body = (await response.json()) as ProblemDetail;
-    return body.detail || body.title || `Request failed with ${response.status}`;
-  }
-
-  const text = await response.text();
-  return text || `Request failed with ${response.status}`;
-}
-
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(await readError(response));
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return (await response.json()) as T;
-}
-
-function appendParam(searchParams: URLSearchParams, key: string, value: string | undefined) {
-  if (value === undefined || value === "") {
-    return;
-  }
-  searchParams.set(key, value);
-}
-
 export function outreachQueryKey(params: OutreachListParams) {
   return ["outreach", params] as const;
 }
@@ -121,11 +80,17 @@ export function dueOutreachQueryKey() {
 
 export async function listOutreach(params: OutreachListParams = {}) {
   const searchParams = new URLSearchParams();
-  appendParam(searchParams, "q", params.q?.trim());
-  appendParam(searchParams, "status", params.status);
-  appendParam(searchParams, "type", params.type);
-  appendParam(searchParams, "sort", params.sort);
-  appendParam(searchParams, "dir", params.dir);
+  appendQueryParam(searchParams, "q", params.q?.trim());
+  appendQueryParam(searchParams, "status", params.status);
+  appendQueryParam(searchParams, "type", params.type);
+  appendQueryParam(searchParams, "sort", params.sort);
+  appendQueryParam(searchParams, "dir", params.dir);
+  appendQueryParam(searchParams, "page", params.page);
+  appendQueryParam(searchParams, "size", params.size);
+
+  if (params.page === undefined && params.size === undefined) {
+    return apiRequestAllPages<Outreach>("/api/v1/outreach", searchParams);
+  }
 
   const query = searchParams.toString();
   return apiRequest<Outreach[]>(`/api/v1/outreach${query ? `?${query}` : ""}`);
@@ -144,7 +109,7 @@ export async function createOutreach(input: OutreachCreateInput) {
 
 export async function updateOutreach(id: number, input: OutreachUpdateInput) {
   return apiRequest<Outreach>(`/api/v1/outreach/${id}`, {
-    method: "PUT",
+    method: "PATCH",
     body: JSON.stringify(input)
   });
 }

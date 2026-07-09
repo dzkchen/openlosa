@@ -7,6 +7,7 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -56,6 +57,29 @@ class ContactIntegrationTest {
     }
 
     @Test
+    void contactListPreservesUnpagedContractAndValidatesPagination() throws Exception {
+        for (int index = 0; index < 101; index += 1) {
+            jdbcTemplate.update("INSERT INTO contact (name) VALUES (?)", "Contact " + index);
+        }
+
+        mockMvc.perform(get("/api/v1/contacts"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", hasSize(101)));
+
+        mockMvc.perform(get("/api/v1/contacts")
+                .param("page", "0")
+                .param("size", "100"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", hasSize(100)));
+
+        mockMvc.perform(get("/api/v1/contacts").param("page", "-1"))
+            .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/v1/contacts").param("size", "101"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void contactCrudSupportsImplicitCompaniesFiltersAndSorts() throws Exception {
         long contactId = createContact("""
             {
@@ -92,7 +116,7 @@ class ContactIntegrationTest {
             .andExpect(jsonPath("$[0].company.name", is("OpenAI")))
             .andExpect(jsonPath("$[0].name", is("Ada Lovelace")));
 
-        mockMvc.perform(put("/api/v1/contacts/{id}", contactId)
+        mockMvc.perform(patch("/api/v1/contacts/{id}", contactId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -150,6 +174,26 @@ class ContactIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.email", nullValue()))
             .andExpect(jsonPath("$.lastContactedAt", nullValue()));
+
+        mockMvc.perform(patch("/api/v1/contacts/{id}", contactId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "email": "new@example.com"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.email", is("new@example.com")));
+
+        mockMvc.perform(patch("/api/v1/contacts/{id}", contactId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "clearEmail": true
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.email", nullValue()));
     }
 
     @Test

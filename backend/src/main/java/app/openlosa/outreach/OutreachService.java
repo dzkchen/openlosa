@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,7 @@ import app.openlosa.contact.ContactRepository;
 import app.openlosa.outreach.dto.OutreachCreateRequest;
 import app.openlosa.outreach.dto.OutreachResponse;
 import app.openlosa.outreach.dto.OutreachUpdateRequest;
+import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 
@@ -49,18 +51,21 @@ public class OutreachService {
     private final ContactRepository contactRepository;
     private final CompanyService companyService;
     private final JobApplicationRepository applicationRepository;
+    private final EntityManager entityManager;
     private final Clock clock = Clock.systemDefaultZone();
 
     public OutreachService(
         OutreachRepository outreachRepository,
         ContactRepository contactRepository,
         CompanyService companyService,
-        JobApplicationRepository applicationRepository
+        JobApplicationRepository applicationRepository,
+        EntityManager entityManager
     ) {
         this.outreachRepository = outreachRepository;
         this.contactRepository = contactRepository;
         this.companyService = companyService;
         this.applicationRepository = applicationRepository;
+        this.entityManager = entityManager;
     }
 
     @Transactional(readOnly = true)
@@ -76,12 +81,21 @@ public class OutreachService {
         LocalDate followUpFrom,
         LocalDate followUpTo,
         String sort,
-        String dir
+        String dir,
+        Integer page,
+        Integer size
     ) {
-        return outreachRepository.findAll(
-                outreachSpec(status, type, contactId, companyId, company, q, sentFrom, sentTo, followUpFrom, followUpTo),
-                sort(sort, dir)
-            ).stream()
+        var specification = outreachSpec(
+            status, type, contactId, companyId, company, q, sentFrom, sentTo, followUpFrom, followUpTo
+        );
+        var ordering = sort(sort, dir);
+        var outreach = page == null && size == null
+            ? outreachRepository.findAll(specification, ordering)
+            : outreachRepository.findAll(
+                specification,
+                PageRequest.of(page == null ? 0 : page, size == null ? 100 : size, ordering)
+            ).getContent();
+        return outreach.stream()
             .map(OutreachMapper::toResponse)
             .toList();
     }
@@ -285,10 +299,8 @@ public class OutreachService {
             return;
         }
 
-        var lastContactedAt = outreach.getContact().getLastContactedAt();
-        if (lastContactedAt == null || lastContactedAt.isBefore(outreach.getSentAt())) {
-            outreach.getContact().setLastContactedAt(outreach.getSentAt());
-        }
+        contactRepository.advanceLastContactedAt(outreach.getContact().getId(), outreach.getSentAt());
+        entityManager.refresh(outreach.getContact());
     }
 
     private Outreach requireOutreach(Long id) {
@@ -379,7 +391,7 @@ public class OutreachService {
     private Sort sort(String sort, String dir) {
         var property = SORT_FIELDS.getOrDefault(StringUtils.hasText(sort) ? sort : "createdAt", "createdAt");
         var direction = "asc".equalsIgnoreCase(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
-        return Sort.by(direction, property);
+        return Sort.by(direction, property).and(Sort.by(direction, "id"));
     }
 
     private String clean(String value) {

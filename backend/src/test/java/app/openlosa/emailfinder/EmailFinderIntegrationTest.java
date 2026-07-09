@@ -7,6 +7,7 @@ import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -28,6 +29,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
+import app.openlosa.common.api.UpstreamServiceException;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -112,6 +115,39 @@ class EmailFinderIntegrationTest {
 
         assertThat(topStatus).isEqualTo("VERIFIED");
         assertThat(persistedJson).contains("ada@openai.com", "UNKNOWN");
+
+        mockMvc.perform(get("/api/v1/email-finder/{lookupId}", lookupId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id", is((int) lookupId)))
+            .andExpect(jsonPath("$.contactId", is((int) contactId)))
+            .andExpect(jsonPath("$.companyUrl", is("https://openai.com")))
+            .andExpect(jsonPath("$.candidates", hasSize(2)))
+            .andExpect(jsonPath("$.candidates[0].email", is("ada@openai.com")));
+
+        mockMvc.perform(get("/api/v1/email-finder/lookups")
+                .param("contactId", String.valueOf(contactId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", hasSize(1)))
+            .andExpect(jsonPath("$[0].id", is((int) lookupId)))
+            .andExpect(jsonPath("$[0].candidates", hasSize(2)));
+    }
+
+    @Test
+    void lookupHistoryReturnsOnlyFiveMostRecentEntries() throws Exception {
+        long contactId = createContact("""
+            {
+              "name": "Ada Lovelace"
+            }
+            """);
+        mockSidecarResponse();
+        for (int index = 0; index < 6; index += 1) {
+            lookup(contactId);
+        }
+
+        mockMvc.perform(get("/api/v1/email-finder/lookups")
+                .param("contactId", String.valueOf(contactId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", hasSize(5)));
     }
 
     @Test
@@ -231,6 +267,22 @@ class EmailFinderIntegrationTest {
                     """.formatted(lookupId + 1)))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.detail", is("lookupId in the request body must match the path")));
+    }
+
+    @Test
+    void unavailableSidecarReturnsAProblemDetailResponse() throws Exception {
+        when(sidecarClient.find(any())).thenThrow(new UpstreamServiceException("Email Finder sidecar is unavailable or timed out"));
+
+        mockMvc.perform(post("/api/v1/email-finder/lookup")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "personName": "Ada Lovelace",
+                      "companyUrl": "https://openai.com"
+                    }
+                    """))
+            .andExpect(status().isBadGateway())
+            .andExpect(jsonPath("$.detail", is("Email Finder sidecar is unavailable or timed out")));
     }
 
     private void mockSidecarResponse() {

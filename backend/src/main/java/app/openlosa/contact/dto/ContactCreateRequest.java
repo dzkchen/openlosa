@@ -3,6 +3,7 @@ package app.openlosa.contact.dto;
 import java.time.LocalDate;
 
 import app.openlosa.contact.ContactRelationship;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Size;
 
 public record ContactCreateRequest(
@@ -12,7 +13,7 @@ public record ContactCreateRequest(
     String companyNotes,
     @Size(max = 255) String name,
     @Size(max = 255) String title,
-    @Size(max = 255) String email,
+    @Email @Size(max = 255) String email,
     @Size(max = 2048) String linkedinUrl,
     ContactRelationship relationship,
     String notes,

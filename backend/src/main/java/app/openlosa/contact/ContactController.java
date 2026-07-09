@@ -5,8 +5,10 @@ import java.util.List;
 
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -20,8 +22,11 @@ import app.openlosa.contact.dto.ContactCreateRequest;
 import app.openlosa.contact.dto.ContactResponse;
 import app.openlosa.contact.dto.ContactUpdateRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 
 @RestController
+@Validated
 @RequestMapping("/api/v1/contacts")
 class ContactController {
 
@@ -40,9 +45,11 @@ class ContactController {
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate contactedFrom,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate contactedTo,
         @RequestParam(required = false) String sort,
-        @RequestParam(required = false) String dir
+        @RequestParam(required = false) String dir,
+        @RequestParam(required = false) @Min(0) Integer page,
+        @RequestParam(required = false) @Min(1) @Max(100) Integer size
     ) {
-        return contactService.list(relationship, companyId, company, q, contactedFrom, contactedTo, sort, dir);
+        return contactService.list(relationship, companyId, company, q, contactedFrom, contactedTo, sort, dir, page, size);
     }
 
     @GetMapping("/{id}")
@@ -56,8 +63,17 @@ class ContactController {
         return contactService.create(request);
     }
 
-    @PutMapping("/{id}")
+    @PatchMapping("/{id}")
     ContactResponse update(@PathVariable Long id, @Valid @RequestBody ContactUpdateRequest request) {
+        return contactService.update(id, request);
+    }
+
+    /**
+     * Retained temporarily for clients created before the partial-update API was aligned with the
+     * documented PATCH contract.
+     */
+    @PutMapping("/{id}")
+    ContactResponse updateLegacy(@PathVariable Long id, @Valid @RequestBody ContactUpdateRequest request) {
         return contactService.update(id, request);
     }
 

@@ -58,8 +58,13 @@ class DatabaseMigrationTest {
             """,
             Integer.class
         );
-        Integer flywayMigrations = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1",
+        Integer requiredFlywayMigrations = jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM flyway_schema_history
+            WHERE success = 1
+              AND version IN ('1', '2', '3', '4', '5', '6')
+            """,
             Integer.class
         );
 
@@ -103,6 +108,6 @@ class DatabaseMigrationTest {
         assertThat(outreachIndexes).isEqualTo(3);
         assertThat(prospectIndexes).isEqualTo(3);
         assertThat(emailLookupIndexes).isEqualTo(3);
-        assertThat(flywayMigrations).isEqualTo(5);
+        assertThat(requiredFlywayMigrations).isEqualTo(6);
     }
 }

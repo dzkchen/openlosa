@@ -5,8 +5,10 @@ import java.util.List;
 
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -20,8 +22,11 @@ import app.openlosa.outreach.dto.OutreachCreateRequest;
 import app.openlosa.outreach.dto.OutreachResponse;
 import app.openlosa.outreach.dto.OutreachUpdateRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 
 @RestController
+@Validated
 @RequestMapping("/api/v1/outreach")
 class OutreachController {
 
@@ -44,9 +49,11 @@ class OutreachController {
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate followUpFrom,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate followUpTo,
         @RequestParam(required = false) String sort,
-        @RequestParam(required = false) String dir
+        @RequestParam(required = false) String dir,
+        @RequestParam(required = false) @Min(0) Integer page,
+        @RequestParam(required = false) @Min(1) @Max(100) Integer size
     ) {
-        return outreachService.list(status, type, contactId, companyId, company, q, sentFrom, sentTo, followUpFrom, followUpTo, sort, dir);
+        return outreachService.list(status, type, contactId, companyId, company, q, sentFrom, sentTo, followUpFrom, followUpTo, sort, dir, page, size);
     }
 
     @GetMapping("/due")
@@ -65,8 +72,17 @@ class OutreachController {
         return outreachService.create(request);
     }
 
-    @PutMapping("/{id}")
+    @PatchMapping("/{id}")
     OutreachResponse update(@PathVariable Long id, @Valid @RequestBody OutreachUpdateRequest request) {
+        return outreachService.update(id, request);
+    }
+
+    /**
+     * Retained temporarily for clients created before the partial-update API was aligned with the
+     * documented PATCH contract.
+     */
+    @PutMapping("/{id}")
+    OutreachResponse updateLegacy(@PathVariable Long id, @Valid @RequestBody OutreachUpdateRequest request) {
         return outreachService.update(id, request);
     }
 

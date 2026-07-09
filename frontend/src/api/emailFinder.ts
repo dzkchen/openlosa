@@ -1,3 +1,5 @@
+import { apiRequest } from "./client";
+
 export const emailLookupStatuses = ["VERIFIED", "CATCH_ALL", "UNKNOWN", "DOES_NOT_EXIST"] as const;
 
 export type EmailLookupStatus = (typeof emailLookupStatuses)[number];
@@ -56,44 +58,19 @@ export type EmailChooseResult = {
   outreachId: number | null;
 };
 
-type ProblemDetail = {
-  title?: string;
-  detail?: string;
-  status?: number;
-};
-
-async function readError(response: Response) {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("json")) {
-    const body = (await response.json()) as ProblemDetail;
-    return body.detail || body.title || `Request failed with ${response.status}`;
-  }
-
-  const text = await response.text();
-  return text || `Request failed with ${response.status}`;
-}
-
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(await readError(response));
-  }
-
-  return (await response.json()) as T;
-}
-
 export async function lookupEmail(input: EmailLookupInput) {
   return apiRequest<EmailLookup>("/api/v1/email-finder/lookup", {
     method: "POST",
     body: JSON.stringify(input)
   });
+}
+
+export async function getEmailLookup(lookupId: number) {
+  return apiRequest<EmailLookup>(`/api/v1/email-finder/${lookupId}`);
+}
+
+export async function listEmailLookups(contactId: number) {
+  return apiRequest<EmailLookup[]>(`/api/v1/email-finder/lookups?contactId=${contactId}`);
 }
 
 export async function chooseEmail(input: EmailChooseInput) {

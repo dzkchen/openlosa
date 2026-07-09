@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,9 +56,19 @@ public class ProspectService {
         Long tagId,
         String q,
         String sort,
-        String dir
+        String dir,
+        Integer page,
+        Integer size
     ) {
-        return prospectRepository.findAll(prospectSpec(priority, status, tagId, q), sort(sort, dir)).stream()
+        var specification = prospectSpec(priority, status, tagId, q);
+        var ordering = sort(sort, dir);
+        var prospects = page == null && size == null
+            ? prospectRepository.findAll(specification, ordering)
+            : prospectRepository.findAll(
+                specification,
+                PageRequest.of(page == null ? 0 : page, size == null ? 100 : size, ordering)
+            ).getContent();
+        return prospects.stream()
             .map(ProspectMapper::toResponse)
             .toList();
     }
@@ -212,7 +223,7 @@ public class ProspectService {
     private Sort sort(String sort, String dir) {
         var property = SORT_FIELDS.getOrDefault(StringUtils.hasText(sort) ? sort : "createdAt", "createdAt");
         var direction = "asc".equalsIgnoreCase(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
-        return Sort.by(direction, property);
+        return Sort.by(direction, property).and(Sort.by(direction, "id"));
     }
 
     private String cleanRequired(String value, String fieldName) {

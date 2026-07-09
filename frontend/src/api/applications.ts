@@ -1,3 +1,5 @@
+import { apiRequest, appendQueryParam } from "./client";
+
 export const applicationStatuses = [
   "SAVED",
   "APPLIED",
@@ -87,62 +89,17 @@ export type ApplicationImportResult = {
   applications: JobApplication[];
 };
 
-type ProblemDetail = {
-  title?: string;
-  detail?: string;
-  status?: number;
-};
-
-async function readError(response: Response) {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    const body = (await response.json()) as ProblemDetail;
-    return body.detail || body.title || `Request failed with ${response.status}`;
-  }
-
-  const text = await response.text();
-  return text || `Request failed with ${response.status}`;
-}
-
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const isFormData = init?.body instanceof FormData;
-  const response = await fetch(path, {
-    ...init,
-    headers: {
-      ...(isFormData ? {} : { "Content-Type": "application/json" }),
-      ...(init?.headers ?? {})
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(await readError(response));
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return (await response.json()) as T;
-}
-
-function appendParam(searchParams: URLSearchParams, key: string, value: string | boolean | undefined) {
-  if (value === undefined || value === "") {
-    return;
-  }
-  searchParams.set(key, String(value));
-}
-
 export function applicationsQueryKey(params: ApplicationListParams) {
   return ["applications", params] as const;
 }
 
 export async function listApplications(params: ApplicationListParams = {}) {
   const searchParams = new URLSearchParams();
-  appendParam(searchParams, "q", params.q?.trim());
-  appendParam(searchParams, "status", params.status);
-  appendParam(searchParams, "favorite", params.favorite);
-  appendParam(searchParams, "sort", params.sort);
-  appendParam(searchParams, "dir", params.dir);
+  appendQueryParam(searchParams, "q", params.q?.trim());
+  appendQueryParam(searchParams, "status", params.status);
+  appendQueryParam(searchParams, "favorite", params.favorite);
+  appendQueryParam(searchParams, "sort", params.sort);
+  appendQueryParam(searchParams, "dir", params.dir);
 
   const query = searchParams.toString();
   return apiRequest<JobApplication[]>(`/api/v1/applications${query ? `?${query}` : ""}`);

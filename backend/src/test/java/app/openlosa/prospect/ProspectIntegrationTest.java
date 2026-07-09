@@ -7,6 +7,7 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -101,7 +102,7 @@ class ProspectIntegrationTest {
             .andExpect(jsonPath("$[0].status", is("NEW")))
             .andExpect(jsonPath("$[0].tags", hasSize(2)));
 
-        mockMvc.perform(put("/api/v1/prospects/{id}", prospectId)
+        mockMvc.perform(patch("/api/v1/prospects/{id}", prospectId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -225,6 +226,15 @@ class ProspectIntegrationTest {
 
         Integer applicationCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM application", Integer.class);
         assertThat(applicationCount).isEqualTo(1);
+
+        mockMvc.perform(delete("/api/v1/applications/{id}", applicationId))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail", is("Delete the linked prospect before deleting its promoted application")));
+
+        mockMvc.perform(get("/api/v1/prospects/{id}", prospectId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status", is("PROMOTED")))
+            .andExpect(jsonPath("$.promotedApplication.id", is((int) applicationId)));
     }
 
     @Test

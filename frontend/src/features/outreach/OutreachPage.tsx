@@ -443,7 +443,6 @@ export default function OutreachPage() {
       return;
     }
     setFinderLaunch({
-      key: Date.now(),
       contactId: outreach.contact.id,
       personName: outreach.contact.name,
       companyUrl: outreach.contact.company?.website ?? outreach.company?.website ?? ""

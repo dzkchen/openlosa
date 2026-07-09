@@ -22,4 +22,4 @@ COPY server.py /app/server.py
 
 EXPOSE 8091
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8091", "--workers", "1", "--threads", "4", "--timeout", "120", "server:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8091", "--workers", "1", "--threads", "4", "--timeout", "300", "server:app"]

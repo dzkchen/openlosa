@@ -369,7 +369,6 @@ export default function ContactsPage() {
 
   const launchEmailFinder = useCallback((contact: Contact) => {
     setFinderLaunch({
-      key: Date.now(),
       contactId: contact.id,
       personName: contact.name,
       companyUrl: contact.company?.website ?? ""
@@ -426,7 +425,9 @@ export default function ContactsPage() {
             value={row.original.email}
             placeholder="Add email"
             disabled={updateMutation.isPending}
-            onCommit={(email) => commitUpdate(row.original.id, { email })}
+            onCommit={(email) =>
+              commitUpdate(row.original.id, email ? { email } : { clearEmail: true })
+            }
           />
         )
       },

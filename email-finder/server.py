@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from itertools import zip_longest
+import math
 import os
 from typing import Any
 
@@ -13,9 +14,10 @@ from email_me.verifier import verify_email
 
 
 DEFAULT_COUNT = int(os.environ.get("EMAIL_FINDER_DEFAULT_COUNT", "3"))
-MAX_COUNT = int(os.environ.get("EMAIL_FINDER_MAX_COUNT", "20"))
+MAX_COUNT = 20
 DEFAULT_DELAY = float(os.environ.get("EMAIL_FINDER_DELAY_SECONDS", "1.0"))
-MAX_DELAY = float(os.environ.get("EMAIL_FINDER_MAX_DELAY_SECONDS", "5.0"))
+MIN_DELAY = 0.25
+MAX_DELAY = 5.0
 
 app = Flask(__name__)
 
@@ -43,6 +45,8 @@ def _request_int(payload: dict[str, Any], name: str, default: int) -> int:
     value = payload.get(name, default)
     if isinstance(value, bool):
         raise ValueError(f"{name} must be an integer")
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError(f"{name} must be an integer")
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -54,9 +58,12 @@ def _request_float(payload: dict[str, Any], name: str, default: float) -> float:
     if isinstance(value, bool):
         raise ValueError(f"{name} must be a number")
     try:
-        return float(value)
+        parsed = float(value)
     except (TypeError, ValueError):
         raise ValueError(f"{name} must be a number")
+    if not math.isfinite(parsed):
+        raise ValueError(f"{name} must be a finite number")
+    return parsed
 
 
 def _request_string(payload: dict[str, Any], name: str, required: bool = True) -> str:
@@ -148,7 +155,7 @@ def _find_candidates(
     candidates: list[VerificationResult] = []
     probed = 0
 
-    if no_smtp:
+    if no_smtp and include_unknown:
         for email, rank, founder_name in permutations[:count]:
             candidates.append(
                 VerificationResult(
@@ -160,7 +167,7 @@ def _find_candidates(
                 )
             )
         probed = len(candidates)
-    else:
+    elif not no_smtp:
         mx_cache: dict[str, Any] = {}
         rate_limiter = RateLimiter(delay)
         for email, rank, founder_name in permutations:
@@ -191,8 +198,8 @@ def find_email():
             return _bad_request(f"count must be between 1 and {MAX_COUNT}")
 
         delay = _request_float(payload, "delaySeconds", DEFAULT_DELAY)
-        if delay < 0 or delay > MAX_DELAY:
-            return _bad_request(f"delaySeconds must be between 0 and {MAX_DELAY:g}")
+        if delay < MIN_DELAY or delay > MAX_DELAY:
+            return _bad_request(f"delaySeconds must be between {MIN_DELAY:g} and {MAX_DELAY:g}")
 
         include_catch_all = _request_bool(payload, "includeCatchAll", True)
         include_unknown = _request_bool(payload, "includeUnknown", True)
@@ -212,9 +219,9 @@ def find_email():
         )
     except ScrapingError as exc:
         return jsonify({"error": str(exc)}), 422
-    except Exception as exc:
+    except Exception:
         app.logger.exception("email lookup failed")
-        return jsonify({"error": "Email lookup failed", "detail": str(exc)}), 502
+        return jsonify({"error": "Email lookup failed"}), 502
 
     return jsonify(
         {

@@ -7,6 +7,7 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -88,7 +89,7 @@ class OutreachIntegrationTest {
             .andExpect(jsonPath("$.sentAt", nullValue()))
             .andExpect(jsonPath("$.followUpBy", is("2026-07-10")));
 
-        mockMvc.perform(put("/api/v1/outreach/{id}", outreachId)
+        mockMvc.perform(patch("/api/v1/outreach/{id}", outreachId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {

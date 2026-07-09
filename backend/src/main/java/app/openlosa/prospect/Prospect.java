@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -60,6 +61,7 @@ public class Prospect {
         inverseJoinColumns = @JoinColumn(name = "tag_id")
     )
     @OrderBy("name ASC")
+    @BatchSize(size = 100)
     private Set<Tag> tags = new LinkedHashSet<>();
 
     @CreationTimestamp

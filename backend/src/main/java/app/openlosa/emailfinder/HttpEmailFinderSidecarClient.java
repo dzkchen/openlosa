@@ -27,10 +27,14 @@ class HttpEmailFinderSidecarClient implements EmailFinderSidecarClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
-    HttpEmailFinderSidecarClient(@Value("${openlosa.email-finder.url}") String baseUrl, ObjectMapper objectMapper) {
+    HttpEmailFinderSidecarClient(
+        @Value("${openlosa.email-finder.url}") String baseUrl,
+        @Value("${openlosa.email-finder.read-timeout:125s}") Duration readTimeout,
+        ObjectMapper objectMapper
+    ) {
         var requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofSeconds(2));
-        requestFactory.setReadTimeout(Duration.ofSeconds(45));
+        requestFactory.setReadTimeout(readTimeout);
         this.restClient = RestClient.builder()
             .baseUrl(baseUrl)
             .requestFactory(requestFactory)

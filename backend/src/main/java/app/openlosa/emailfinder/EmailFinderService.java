@@ -2,6 +2,7 @@ package app.openlosa.emailfinder;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.Semaphore;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import app.openlosa.common.api.BadRequestException;
 import app.openlosa.common.api.NotFoundException;
+import app.openlosa.common.api.TooManyRequestsException;
 import app.openlosa.contact.Contact;
 import app.openlosa.contact.ContactRepository;
 import app.openlosa.emailfinder.dto.EmailCandidateResponse;
@@ -37,6 +39,7 @@ public class EmailFinderService {
     private final OutreachRepository outreachRepository;
     private final EmailFinderSidecarClient sidecarClient;
     private final ObjectMapper objectMapper;
+    private final Semaphore lookupPermit = new Semaphore(1, true);
 
     public EmailFinderService(
         EmailLookupRepository emailLookupRepository,
@@ -57,15 +60,15 @@ public class EmailFinderService {
         var companyUrl = cleanRequired(request.companyUrl(), "companyUrl");
         var contact = request.contactId() == null ? null : requireContact(request.contactId());
 
-        var sidecarResponse = sidecarClient.find(new EmailFinderSidecarRequest(
-            personName,
-            companyUrl,
-            request.count(),
-            request.includeCatchAll(),
-            request.includeUnknown(),
-            request.noSmtp(),
-            request.delaySeconds()
-        ));
+        var sidecarResponse = findWithPermit(new EmailFinderSidecarRequest(
+                personName,
+                companyUrl,
+                request.count(),
+                request.includeCatchAll(),
+                request.includeUnknown(),
+                request.noSmtp(),
+                request.delaySeconds()
+            ));
         var candidates = normalizeCandidates(sidecarResponse == null ? List.of() : sidecarResponse.candidates());
         var lookup = new EmailLookup(personName, companyUrl, writeCandidates(candidates));
         lookup.setContact(contact);
@@ -76,6 +79,20 @@ public class EmailFinderService {
 
         var saved = emailLookupRepository.saveAndFlush(lookup);
         return toResponse(saved, sidecarResponse, candidates);
+    }
+
+    @Transactional(readOnly = true)
+    public EmailLookupResponse getLookup(Long lookupId) {
+        var lookup = requireLookup(lookupId);
+        return toResponse(lookup, null, readCandidates(lookup));
+    }
+
+    @Transactional(readOnly = true)
+    public List<EmailLookupResponse> listLookups(Long contactId) {
+        requireContact(contactId);
+        return emailLookupRepository.findTop5ByContactIdOrderByCreatedAtDesc(contactId).stream()
+            .map(lookup -> toResponse(lookup, null, readCandidates(lookup)))
+            .toList();
     }
 
     @Transactional
@@ -123,6 +140,17 @@ public class EmailFinderService {
             throw new BadRequestException("contactId is required to choose an email");
         }
         return lookup.getContact();
+    }
+
+    private EmailFinderSidecarResponse findWithPermit(EmailFinderSidecarRequest request) {
+        if (!lookupPermit.tryAcquire()) {
+            throw new TooManyRequestsException("An Email Finder lookup is already in progress; try again shortly");
+        }
+        try {
+            return sidecarClient.find(request);
+        } finally {
+            lookupPermit.release();
+        }
     }
 
     private EmailLookupResponse toResponse(

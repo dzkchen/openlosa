@@ -15,6 +15,6 @@ public record EmailLookupRequest(
     Boolean includeCatchAll,
     Boolean includeUnknown,
     Boolean noSmtp,
-    @DecimalMin("0.0") @DecimalMax("5.0") Double delaySeconds
+    @DecimalMin("0.25") @DecimalMax("5.0") Double delaySeconds
 ) {
 }

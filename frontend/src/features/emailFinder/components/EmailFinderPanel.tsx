@@ -1,7 +1,8 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   chooseEmail,
+  listEmailLookups,
   lookupEmail,
   type EmailCandidate,
   type EmailLookup,
@@ -12,7 +13,6 @@ import EmptyState from "../../../components/layout/EmptyState";
 import WorkspacePanel from "../../../components/layout/WorkspacePanel";
 
 export type EmailFinderLaunch = {
-  key: number;
   contactId: number;
   personName: string;
   companyUrl: string;
@@ -119,6 +119,12 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
     [contacts, selectedContactId]
   );
   const selectedContactMissing = Boolean(selectedContactId && !selectedContact);
+  const selectedContactIdNumber = Number(selectedContactId);
+  const previousLookupsQuery = useQuery({
+    queryKey: ["email-lookups", selectedContactIdNumber],
+    queryFn: () => listEmailLookups(selectedContactIdNumber),
+    enabled: Number.isSafeInteger(selectedContactIdNumber) && selectedContactIdNumber > 0
+  });
 
   useEffect(() => {
     if (!launch) {
@@ -168,6 +174,7 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
       setLookup(result);
       setChosenEmail(result.chosenEmail);
       setToastMessage(null);
+      void queryClient.invalidateQueries({ queryKey: ["email-lookups", result.contactId] });
     }
   });
 
@@ -189,6 +196,7 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
       );
       void queryClient.invalidateQueries({ queryKey: ["contacts"] });
       void queryClient.invalidateQueries({ queryKey: ["outreach"] });
+      void queryClient.invalidateQueries({ queryKey: ["email-lookups", result.contactId] });
     }
   });
 
@@ -235,6 +243,16 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
 
   const formDisabled = lookupMutation.isPending || chooseMutation.isPending;
   const candidates = rankedCandidates(lookup);
+
+  function reopenLookup(previousLookup: EmailLookup) {
+    setLookup(previousLookup);
+    setChosenEmail(previousLookup.chosenEmail);
+    setPersonName(previousLookup.personName);
+    setCompanyUrl(previousLookup.companyUrl);
+    setSuccessMessage(null);
+    setValidation(null);
+    setToastMessage(null);
+  }
 
   return (
     <WorkspacePanel title="Find email" meta={lookup ? `${candidates.length} candidates` : "Lookup"}>
@@ -327,6 +345,37 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
         {successMessage ? (
           <div className="rounded-md border border-good/30 bg-good/10 px-3 py-2 text-sm text-good">
             {successMessage}
+          </div>
+        ) : null}
+
+        {previousLookupsQuery.isError ? (
+          <div
+            role="alert"
+            className="flex flex-col gap-2 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn sm:flex-row sm:items-center sm:justify-between"
+          >
+            <span>Could not load previous results: {buildErrorMessage(previousLookupsQuery.error)}</span>
+            <button
+              type="button"
+              onClick={() => void previousLookupsQuery.refetch()}
+              className="h-8 rounded-md border border-warn/40 px-2 text-xs font-semibold transition hover:bg-warn/10"
+            >
+              Retry
+            </button>
+          </div>
+        ) : previousLookupsQuery.data && previousLookupsQuery.data.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-line/70 bg-canvas/35 px-3 py-2">
+            <span className="text-xs font-medium uppercase tracking-[0.12em] text-muted">Previous results</span>
+            {previousLookupsQuery.data.slice(0, 5).map((previousLookup) => (
+              <button
+                key={previousLookup.id}
+                type="button"
+                disabled={formDisabled}
+                onClick={() => reopenLookup(previousLookup)}
+                className="rounded-md border border-line/70 px-2 py-1 text-xs text-muted transition hover:bg-elevated/80 hover:text-text disabled:cursor-wait disabled:text-soft"
+              >
+                {new Date(previousLookup.createdAt).toLocaleDateString()} · {previousLookup.candidates.length} candidates
+              </button>
+            ))}
           </div>
         ) : null}
 

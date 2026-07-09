@@ -3,6 +3,8 @@ package app.openlosa.prospect;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -16,9 +18,15 @@ import jakarta.persistence.LockModeType;
 
 public interface ProspectRepository extends JpaRepository<Prospect, Long>, JpaSpecificationExecutor<Prospect> {
 
+    boolean existsByPromotedApplicationId(Long applicationId);
+
     @Override
     @EntityGraph(attributePaths = {"tags", "promotedApplication", "promotedApplication.company"})
     List<Prospect> findAll(Specification<Prospect> spec, Sort sort);
+
+    @Override
+    @EntityGraph(attributePaths = {"promotedApplication", "promotedApplication.company"})
+    Page<Prospect> findAll(Specification<Prospect> spec, Pageable pageable);
 
     @Override
     @EntityGraph(attributePaths = {"tags", "promotedApplication", "promotedApplication.company"})

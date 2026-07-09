@@ -25,6 +25,7 @@ import app.openlosa.application.dto.ApplicationUpdateRequest;
 import app.openlosa.application.dto.StatusTransitionResponse;
 import app.openlosa.common.api.BadRequestException;
 import app.openlosa.common.api.NotFoundException;
+import app.openlosa.prospect.ProspectRepository;
 import jakarta.persistence.criteria.Predicate;
 
 @Service
@@ -45,18 +46,21 @@ public class ApplicationService {
     private final StatusTransitionRepository transitionRepository;
     private final TagRepository tagRepository;
     private final CompanyService companyService;
+    private final ProspectRepository prospectRepository;
     private final Clock clock;
 
     public ApplicationService(
         JobApplicationRepository applicationRepository,
         StatusTransitionRepository transitionRepository,
         TagRepository tagRepository,
-        CompanyService companyService
+        CompanyService companyService,
+        ProspectRepository prospectRepository
     ) {
         this.applicationRepository = applicationRepository;
         this.transitionRepository = transitionRepository;
         this.tagRepository = tagRepository;
         this.companyService = companyService;
+        this.prospectRepository = prospectRepository;
         this.clock = Clock.systemDefaultZone();
     }
 
@@ -259,6 +263,9 @@ public class ApplicationService {
 
     @Transactional
     public void delete(Long id) {
+        if (prospectRepository.existsByPromotedApplicationId(id)) {
+            throw new BadRequestException("Delete the linked prospect before deleting its promoted application");
+        }
         applicationRepository.delete(requireApplication(id));
     }
 

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,12 +50,19 @@ public class ContactService {
         LocalDate contactedFrom,
         LocalDate contactedTo,
         String sort,
-        String dir
+        String dir,
+        Integer page,
+        Integer size
     ) {
-        return contactRepository.findAll(
-                contactSpec(relationship, companyId, company, q, contactedFrom, contactedTo),
-                sort(sort, dir)
-            ).stream()
+        var specification = contactSpec(relationship, companyId, company, q, contactedFrom, contactedTo);
+        var ordering = sort(sort, dir);
+        var contacts = page == null && size == null
+            ? contactRepository.findAll(specification, ordering)
+            : contactRepository.findAll(
+                specification,
+                PageRequest.of(page == null ? 0 : page, size == null ? 100 : size, ordering)
+            ).getContent();
+        return contacts.stream()
             .map(ContactMapper::toResponse)
             .toList();
     }
@@ -78,7 +86,7 @@ public class ContactService {
                 request.companyNotes()
             ));
         }
-        applyEditableFields(contact, request.title(), request.email(), request.linkedinUrl(), request.notes(),
+        applyEditableFields(contact, request.title(), request.email(), false, request.linkedinUrl(), request.notes(),
             request.lastContactedAt(), false);
         return ContactMapper.toResponse(contactRepository.save(contact));
     }
@@ -107,12 +115,17 @@ public class ContactService {
             contact.setRelationship(request.relationship());
         }
 
+        var clearEmail = Boolean.TRUE.equals(request.clearEmail());
+        if (clearEmail && request.email() != null) {
+            throw new BadRequestException("email cannot be set and cleared in the same request");
+        }
+
         var clearLastContactedAt = Boolean.TRUE.equals(request.clearLastContactedAt());
         if (clearLastContactedAt && request.lastContactedAt() != null) {
             throw new BadRequestException("lastContactedAt cannot be set and cleared in the same request");
         }
 
-        applyEditableFields(contact, request.title(), request.email(), request.linkedinUrl(), request.notes(),
+        applyEditableFields(contact, request.title(), request.email(), clearEmail, request.linkedinUrl(), request.notes(),
             request.lastContactedAt(), clearLastContactedAt);
         return ContactMapper.toResponse(contact);
     }
@@ -131,6 +144,7 @@ public class ContactService {
         Contact contact,
         String title,
         String email,
+        boolean clearEmail,
         String linkedinUrl,
         String notes,
         LocalDate lastContactedAt,
@@ -139,7 +153,9 @@ public class ContactService {
         if (title != null) {
             contact.setTitle(clean(title));
         }
-        if (email != null) {
+        if (clearEmail) {
+            contact.setEmail(null);
+        } else if (email != null) {
             contact.setEmail(clean(email));
         }
         if (linkedinUrl != null) {
@@ -201,7 +217,7 @@ public class ContactService {
     private Sort sort(String sort, String dir) {
         var property = SORT_FIELDS.getOrDefault(StringUtils.hasText(sort) ? sort : "createdAt", "createdAt");
         var direction = "asc".equalsIgnoreCase(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
-        return Sort.by(direction, property);
+        return Sort.by(direction, property).and(Sort.by(direction, "id"));
     }
 
     private String cleanRequired(String value, String fieldName) {

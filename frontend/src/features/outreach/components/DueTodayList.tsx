@@ -63,7 +63,7 @@ export default function DueTodayList({ disabled, errorMessage, isLoading, items,
         </div>
       ) : items.length > 0 ? (
         <div className="divide-y divide-line/60">
-          {items.slice(0, 6).map((item) => (
+          {items.map((item) => (
             <div key={item.id} className="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -107,9 +107,6 @@ export default function DueTodayList({ disabled, errorMessage, isLoading, items,
               </div>
             </div>
           ))}
-          {items.length > 6 ? (
-            <div className="px-4 py-2 text-xs text-muted">{items.length - 6} more due in the table below.</div>
-          ) : null}
         </div>
       ) : null}
     </section>

@@ -1,5 +1,6 @@
 package app.openlosa.emailfinder;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -11,6 +12,9 @@ import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 
 public interface EmailLookupRepository extends JpaRepository<EmailLookup, Long> {
+
+    @EntityGraph(attributePaths = {"contact", "contact.company", "chosenOutreach"})
+    List<EmailLookup> findTop5ByContactIdOrderByCreatedAtDesc(Long contactId);
 
     @Override
     @EntityGraph(attributePaths = {"contact", "contact.company", "chosenOutreach"})
