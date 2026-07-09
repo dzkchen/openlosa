@@ -22,5 +22,23 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
 
+  email-finder:
+    build:
+      context: ./email-finder
+      args:
+        EMAIL_ME_COMMIT: 8b448def98d0bf88143affc2459f7c7d433dc869
+    container_name: openlosa-email-finder
+    profiles:
+      - email
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8091:8091"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health', timeout=2).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
 volumes:
   mysql_data:

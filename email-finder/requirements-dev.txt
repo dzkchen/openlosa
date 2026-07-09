@@ -1,0 +1,2 @@
+-r requirements.txt
+email-me @ git+https://github.com/dzkchen/email-me.git@8b448def98d0bf88143affc2459f7c7d433dc869
