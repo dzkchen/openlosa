@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   chooseEmail,
@@ -104,6 +104,7 @@ function rankedCandidates(lookup: EmailLookup | null) {
 
 export default function EmailFinderPanel({ contacts, contactsLoading, launch }: EmailFinderPanelProps) {
   const queryClient = useQueryClient();
+  const requestGeneration = useRef(0);
   const [selectedContactId, setSelectedContactId] = useState("");
   const [personName, setPersonName] = useState("");
   const [companyUrl, setCompanyUrl] = useState("");
@@ -131,6 +132,7 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
       return;
     }
 
+    requestGeneration.current += 1;
     setSelectedContactId(String(launch.contactId));
     setPersonName(launch.personName);
     setCompanyUrl(launch.companyUrl);
@@ -142,6 +144,7 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
   }, [launch]);
 
   function clearLookupState() {
+    requestGeneration.current += 1;
     setLookup(null);
     setChosenEmail(null);
     setSuccessMessage(null);
@@ -159,7 +162,7 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
   }
 
   const lookupMutation = useMutation({
-    mutationFn: lookupEmail,
+    mutationFn: ({ input }: { input: Parameters<typeof lookupEmail>[0]; generation: number }) => lookupEmail(input),
     onMutate: () => {
       setLookup(null);
       setChosenEmail(null);
@@ -167,36 +170,48 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
       setValidation(null);
       setToastMessage(null);
     },
-    onError: (error) => {
+    onError: (error, { generation }) => {
+      if (generation !== requestGeneration.current) {
+        return;
+      }
       setToastMessage(sidecarFriendlyMessage(error));
     },
-    onSuccess: (result) => {
+    onSuccess: (result, { generation }) => {
+      void queryClient.invalidateQueries({ queryKey: ["email-lookups", result.contactId] });
+      if (generation !== requestGeneration.current) {
+        return;
+      }
       setLookup(result);
       setChosenEmail(result.chosenEmail);
       setToastMessage(null);
-      void queryClient.invalidateQueries({ queryKey: ["email-lookups", result.contactId] });
     }
   });
 
   const chooseMutation = useMutation({
-    mutationFn: chooseEmail,
+    mutationFn: ({ input }: { input: Parameters<typeof chooseEmail>[0]; generation: number }) => chooseEmail(input),
     onMutate: () => {
       setSuccessMessage(null);
       setToastMessage(null);
     },
-    onError: (error) => {
+    onError: (error, { generation }) => {
+      if (generation !== requestGeneration.current) {
+        return;
+      }
       setToastMessage(buildErrorMessage(error));
     },
-    onSuccess: (result) => {
+    onSuccess: (result, { generation }) => {
+      void queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      void queryClient.invalidateQueries({ queryKey: ["outreach"] });
+      void queryClient.invalidateQueries({ queryKey: ["email-lookups", result.contactId] });
+      if (generation !== requestGeneration.current) {
+        return;
+      }
       setChosenEmail(result.chosenEmail);
       setSuccessMessage(
         result.outreachId
           ? `Filled ${result.chosenEmail} and queued a to-send outreach.`
           : `Filled ${result.chosenEmail}.`
       );
-      void queryClient.invalidateQueries({ queryKey: ["contacts"] });
-      void queryClient.invalidateQueries({ queryKey: ["outreach"] });
-      void queryClient.invalidateQueries({ queryKey: ["email-lookups", result.contactId] });
     }
   });
 
@@ -219,13 +234,18 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
       return;
     }
 
+    const generation = requestGeneration.current + 1;
+    requestGeneration.current = generation;
     lookupMutation.mutate({
-      contactId,
-      personName: cleanName,
-      companyUrl: cleanUrl,
-      count,
-      includeCatchAll: true,
-      includeUnknown: true
+      generation,
+      input: {
+        contactId,
+        personName: cleanName,
+        companyUrl: cleanUrl,
+        count,
+        includeCatchAll: true,
+        includeUnknown: true
+      }
     });
   }
 
@@ -234,10 +254,13 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
       return;
     }
     chooseMutation.mutate({
-      lookupId: lookup.id,
-      contactId: Number(selectedContactId),
-      email: candidate.email,
-      createOutreach: true
+      generation: requestGeneration.current,
+      input: {
+        lookupId: lookup.id,
+        contactId: Number(selectedContactId),
+        email: candidate.email,
+        createOutreach: true
+      }
     });
   }
 
@@ -323,7 +346,7 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
 
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <p className="text-sm leading-6 text-muted">
-              SMTP probes may be blocked on port 25; catch-all and unknown results are ranked guesses, not guarantees.
+              Generated addresses are ranked guesses, not guarantees. SMTP probes may be blocked on port 25.
               {selectedContact?.email ? ` Current email: ${selectedContact.email}.` : ""}
             </p>
             <button
