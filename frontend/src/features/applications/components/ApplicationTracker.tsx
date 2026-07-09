@@ -379,6 +379,10 @@ export default function ApplicationTracker({
     void queryClient.invalidateQueries({ queryKey: ["applications"] });
   }
 
+  function invalidateProspects() {
+    void queryClient.invalidateQueries({ queryKey: ["prospects"] });
+  }
+
   const createMutation = useMutation({
     mutationFn: createApplication,
     onMutate: () => setMutationError(null),
@@ -387,6 +391,7 @@ export default function ApplicationTracker({
       setMutationError(null);
       onAddOpenChange?.(false);
       invalidateApplications();
+      invalidateProspects();
     }
   });
 
@@ -397,6 +402,7 @@ export default function ApplicationTracker({
     onSuccess: () => {
       setMutationError(null);
       invalidateApplications();
+      invalidateProspects();
     }
   });
 
@@ -407,6 +413,7 @@ export default function ApplicationTracker({
     onSuccess: () => {
       setMutationError(null);
       invalidateApplications();
+      invalidateProspects();
     }
   });
 

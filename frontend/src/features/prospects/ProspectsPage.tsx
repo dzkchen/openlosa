@@ -12,12 +12,14 @@ import {
   createProspect,
   deleteProspect,
   listProspects,
+  promoteProspect,
   prospectPriorities,
   prospectsQueryKey,
   prospectStatuses,
   updateProspect,
   type Prospect,
   type ProspectCreateInput,
+  type ProspectPromoteInput,
   type ProspectPriority,
   type ProspectSortField,
   type ProspectStatus,
@@ -40,6 +42,8 @@ const statusLabels: Record<ProspectStatus, string> = {
   PROMOTED: "Promoted",
   DROPPED: "Dropped"
 };
+
+const editableProspectStatuses = prospectStatuses.filter((status) => status !== "PROMOTED");
 
 type EditableTextCellProps = {
   disabled?: boolean;
@@ -119,10 +123,11 @@ function PriorityCell({ disabled, onCommit, value }: PriorityCellProps) {
 type StatusCellProps = {
   disabled?: boolean;
   onCommit: (value: ProspectStatus) => void;
+  options: readonly ProspectStatus[];
   value: ProspectStatus;
 };
 
-function StatusCell({ disabled, onCommit, value }: StatusCellProps) {
+function StatusCell({ disabled, onCommit, options, value }: StatusCellProps) {
   return (
     <select
       value={value}
@@ -130,7 +135,7 @@ function StatusCell({ disabled, onCommit, value }: StatusCellProps) {
       onChange={(event) => onCommit(event.target.value as ProspectStatus)}
       className="h-9 w-full min-w-36 rounded-md border border-transparent bg-transparent px-2 text-sm text-text outline-none transition hover:border-line/70 hover:bg-elevated/50 focus:border-accent/60 focus:bg-elevated/70 focus:shadow-focus disabled:cursor-wait disabled:text-muted"
     >
-      {prospectStatuses.map((status) => (
+      {options.map((status) => (
         <option key={status} value={status} className="bg-elevated text-text">
           {statusLabels[status]}
         </option>
@@ -254,7 +259,7 @@ function NewProspectForm({ isSaving, onCancel, onSubmit, tags }: NewProspectForm
             onChange={(event) => setStatus(event.target.value as ProspectStatus)}
             className="h-10 rounded-md border border-line/80 bg-elevated/60 px-3 text-sm font-normal normal-case tracking-normal text-text outline-none focus:border-accent/70 focus:shadow-focus"
           >
-            {prospectStatuses.map((option) => (
+            {editableProspectStatuses.map((option) => (
               <option key={option} value={option}>
                 {statusLabels[option]}
               </option>
@@ -308,6 +313,86 @@ function NewProspectForm({ isSaving, onCancel, onSubmit, tags }: NewProspectForm
   );
 }
 
+type PromoteProspectFormProps = {
+  isSaving: boolean;
+  onCancel: () => void;
+  onSubmit: (input: ProspectPromoteInput) => void;
+  prospect: Prospect;
+};
+
+function PromoteProspectForm({ isSaving, onCancel, onSubmit, prospect }: PromoteProspectFormProps) {
+  const [companyName, setCompanyName] = useState(prospect.name);
+  const [roleTitle, setRoleTitle] = useState("Opportunity");
+  const [validation, setValidation] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCompanyName(prospect.name);
+    setRoleTitle("Opportunity");
+    setValidation(null);
+  }, [prospect.id, prospect.name]);
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    const cleanCompanyName = companyName.trim();
+    const cleanRoleTitle = roleTitle.trim();
+    if (!cleanCompanyName || !cleanRoleTitle) {
+      setValidation("Company and role are required.");
+      return;
+    }
+
+    setValidation(null);
+    onSubmit({
+      companyName: cleanCompanyName,
+      roleTitle: cleanRoleTitle
+    });
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="border-b border-line/70 bg-canvas/35 px-4 py-4">
+      <div className="grid gap-3 lg:grid-cols-[minmax(13rem,1fr)_minmax(13rem,1fr)_auto] lg:items-end">
+        <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-muted">
+          Company
+          <input
+            value={companyName}
+            disabled={isSaving}
+            onChange={(event) => setCompanyName(event.target.value)}
+            className="h-10 rounded-md border border-line/80 bg-elevated/60 px-3 text-sm font-normal normal-case tracking-normal text-text outline-none placeholder:text-soft focus:border-accent/70 focus:shadow-focus"
+            placeholder="Company name"
+          />
+        </label>
+        <label className="grid gap-1 text-xs font-medium uppercase tracking-[0.12em] text-muted">
+          Role
+          <input
+            value={roleTitle}
+            disabled={isSaving}
+            onChange={(event) => setRoleTitle(event.target.value)}
+            className="h-10 rounded-md border border-line/80 bg-elevated/60 px-3 text-sm font-normal normal-case tracking-normal text-text outline-none placeholder:text-soft focus:border-accent/70 focus:shadow-focus"
+            placeholder="Role title"
+          />
+        </label>
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isSaving}
+            className="h-10 rounded-md border border-line/80 px-3 text-sm font-medium text-muted transition hover:bg-elevated/70 hover:text-text disabled:cursor-wait disabled:text-soft"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="h-10 rounded-md bg-text px-3 text-sm font-medium text-canvas transition hover:bg-text/90 disabled:cursor-wait disabled:bg-soft disabled:text-text/60"
+          >
+            {isSaving ? "Promoting" : "Promote"}
+          </button>
+        </div>
+      </div>
+      {validation ? <p className="mt-3 text-sm text-warn">{validation}</p> : null}
+    </form>
+  );
+}
+
 function formatDate(value: string | null) {
   if (!value) {
     return "Not set";
@@ -322,6 +407,7 @@ function buildMutationMessage(error: unknown) {
 export default function ProspectsPage() {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
+  const [promotingProspect, setPromotingProspect] = useState<Prospect | null>(null);
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<ProspectPriority | "">("");
   const [statusFilter, setStatusFilter] = useState<ProspectStatus | "">("");
@@ -356,6 +442,10 @@ export default function ProspectsPage() {
     void queryClient.invalidateQueries({ queryKey: ["prospects"] });
   }
 
+  function invalidateApplications() {
+    void queryClient.invalidateQueries({ queryKey: ["applications"] });
+  }
+
   const createMutation = useMutation({
     mutationFn: createProspect,
     onMutate: () => setMutationError(null),
@@ -384,6 +474,18 @@ export default function ProspectsPage() {
     onSuccess: () => {
       setMutationError(null);
       invalidateProspects();
+    }
+  });
+
+  const promoteMutation = useMutation({
+    mutationFn: ({ id, input }: { id: number; input: ProspectPromoteInput }) => promoteProspect(id, input),
+    onMutate: () => setMutationError(null),
+    onError: (error) => setMutationError(error),
+    onSuccess: () => {
+      setMutationError(null);
+      setPromotingProspect(null);
+      invalidateProspects();
+      invalidateApplications();
     }
   });
 
@@ -439,7 +541,8 @@ export default function ProspectsPage() {
         cell: ({ row }) => (
           <StatusCell
             value={row.original.status}
-            disabled={updateMutation.isPending}
+            options={row.original.promotedApplication ? ["PROMOTED"] : editableProspectStatuses}
+            disabled={updateMutation.isPending || row.original.promotedApplication !== null}
             onCommit={(status) => {
               if (status !== row.original.status) {
                 commitUpdate(row.original.id, { status });
@@ -479,11 +582,27 @@ export default function ProspectsPage() {
         header: "Promoted",
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="block min-w-44 px-2 text-sm text-muted">
-            {row.original.promotedApplication
-              ? `${row.original.promotedApplication.roleTitle} · ${row.original.promotedApplication.companyName}`
-              : "Not promoted"}
-          </span>
+          <div className="flex min-w-56 items-center gap-2 px-2">
+            <span className="min-w-0 flex-1 truncate text-sm text-muted">
+              {row.original.promotedApplication
+                ? `${row.original.promotedApplication.roleTitle} · ${row.original.promotedApplication.companyName}`
+                : "Not promoted"}
+            </span>
+            {!row.original.promotedApplication ? (
+              <button
+                type="button"
+                disabled={promoteMutation.isPending}
+                onClick={() => {
+                  setMutationError(null);
+                  setAddOpen(false);
+                  setPromotingProspect(row.original);
+                }}
+                className="h-8 rounded-md border border-accent/60 px-2 text-xs font-semibold text-accent transition hover:bg-accent/10 disabled:cursor-wait disabled:border-line/70 disabled:text-soft"
+              >
+                Promote
+              </button>
+            ) : null}
+          </div>
         )
       },
       {
@@ -509,7 +628,7 @@ export default function ProspectsPage() {
         )
       }
     ],
-    [deleteMutation, tags, tagsQuery.isLoading, updateMutation]
+    [deleteMutation, promoteMutation.isPending, tags, tagsQuery.isLoading, updateMutation]
   );
 
   const table = useReactTable({
@@ -537,6 +656,7 @@ export default function ProspectsPage() {
         action={addOpen ? "Close" : "Add prospect"}
         onAction={() => {
           setMutationError(null);
+          setPromotingProspect(null);
           setAddOpen((open) => !open);
         }}
       />
@@ -608,6 +728,15 @@ export default function ProspectsPage() {
               isSaving={createMutation.isPending}
               onCancel={() => setAddOpen(false)}
               onSubmit={(input) => createMutation.mutate(input)}
+            />
+          ) : null}
+          {promotingProspect ? (
+            <PromoteProspectForm
+              key={promotingProspect.id}
+              prospect={promotingProspect}
+              isSaving={promoteMutation.isPending}
+              onCancel={() => setPromotingProspect(null)}
+              onSubmit={(input) => promoteMutation.mutate({ id: promotingProspect.id, input })}
             />
           ) : null}
           {mutationError ? (

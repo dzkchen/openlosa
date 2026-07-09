@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import app.openlosa.prospect.dto.ProspectCreateRequest;
+import app.openlosa.prospect.dto.ProspectPromoteRequest;
 import app.openlosa.prospect.dto.ProspectResponse;
 import app.openlosa.prospect.dto.ProspectUpdateRequest;
 import jakarta.validation.Valid;
@@ -55,6 +56,14 @@ class ProspectController {
     @PutMapping("/{id}")
     ProspectResponse update(@PathVariable Long id, @Valid @RequestBody ProspectUpdateRequest request) {
         return prospectService.update(id, request);
+    }
+
+    @PostMapping("/{id}/promote")
+    ProspectResponse promote(
+        @PathVariable Long id,
+        @Valid @RequestBody(required = false) ProspectPromoteRequest request
+    ) {
+        return prospectService.promote(id, request);
     }
 
     @DeleteMapping("/{id}")

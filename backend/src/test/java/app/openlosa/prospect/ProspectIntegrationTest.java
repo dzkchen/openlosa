@@ -160,6 +160,124 @@ class ProspectIntegrationTest {
             .andExpect(jsonPath("$.detail", is("url cannot be set and cleared in the same request")));
     }
 
+    @Test
+    void promoteCreatesSavedProspectApplicationAndLinksBack() throws Exception {
+        long firstTagId = createTag("Summer 2027", "#60a5fa");
+        long secondTagId = createTag("Research", "#a78bfa");
+        long prospectId = createProspect("""
+            {
+              "name": "Anthropic",
+              "url": "https://anthropic.com/careers",
+              "note": "Track early internship leads",
+              "priority": "HIGH",
+              "tagIds": [%d, %d]
+            }
+            """.formatted(firstTagId, secondTagId));
+
+        String response = mockMvc.perform(post("/api/v1/prospects/{id}/promote", prospectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "companyName": "Anthropic",
+                      "roleTitle": "Software Engineer Intern"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status", is("PROMOTED")))
+            .andExpect(jsonPath("$.promotedApplication.roleTitle", is("Software Engineer Intern")))
+            .andExpect(jsonPath("$.promotedApplication.companyName", is("Anthropic")))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+        long applicationId = objectMapper.readTree(response).get("promotedApplication").get("id").asLong();
+
+        mockMvc.perform(get("/api/v1/applications/{id}", applicationId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.company.name", is("Anthropic")))
+            .andExpect(jsonPath("$.company.website", is("https://anthropic.com/careers")))
+            .andExpect(jsonPath("$.company.notes", is("Track early internship leads")))
+            .andExpect(jsonPath("$.roleTitle", is("Software Engineer Intern")))
+            .andExpect(jsonPath("$.postingUrl", is("https://anthropic.com/careers")))
+            .andExpect(jsonPath("$.status", is("SAVED")))
+            .andExpect(jsonPath("$.source", is("PROSPECT")))
+            .andExpect(jsonPath("$.notes", is("Track early internship leads")))
+            .andExpect(jsonPath("$.tags", hasSize(2)));
+
+        Integer transitionCount = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM status_transition WHERE application_id = ? AND from_status IS NULL AND to_status = 'SAVED'",
+            Integer.class,
+            applicationId
+        );
+        assertThat(transitionCount).isEqualTo(1);
+
+        Integer copiedTagCount = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM application_tag WHERE application_id = ?",
+            Integer.class,
+            applicationId
+        );
+        assertThat(copiedTagCount).isEqualTo(2);
+
+        mockMvc.perform(post("/api/v1/prospects/{id}/promote", prospectId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status", is("PROMOTED")))
+            .andExpect(jsonPath("$.promotedApplication.id", is((int) applicationId)));
+
+        Integer applicationCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM application", Integer.class);
+        assertThat(applicationCount).isEqualTo(1);
+    }
+
+    @Test
+    void promotedStatusRequiresPromotionLink() throws Exception {
+        long prospectId = createProspect("""
+            {
+              "name": "Status guard"
+            }
+            """);
+
+        mockMvc.perform(put("/api/v1/prospects/{id}", prospectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "status": "PROMOTED"
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail", is("Use promote endpoint to mark a prospect promoted")));
+
+        mockMvc.perform(post("/api/v1/prospects")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "name": "Already promoted",
+                      "status": "PROMOTED"
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail", is("Use promote endpoint to mark a prospect promoted")));
+
+        mockMvc.perform(post("/api/v1/prospects/{id}/promote", prospectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "companyName": "Status Guard Co",
+                      "roleTitle": "Research Intern"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status", is("PROMOTED")));
+
+        mockMvc.perform(put("/api/v1/prospects/{id}", prospectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "status": "DROPPED"
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail", is("Promoted prospects must stay PROMOTED while linked to an application")));
+    }
+
     private long createTag(String name, String color) throws Exception {
         String response = mockMvc.perform(post("/api/v1/tags")
                 .contentType(MediaType.APPLICATION_JSON)

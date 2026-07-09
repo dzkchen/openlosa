@@ -50,6 +50,11 @@ export type ProspectUpdateInput = Partial<ProspectCreateInput> & {
   clearNote?: boolean;
 };
 
+export type ProspectPromoteInput = {
+  companyName?: string | null;
+  roleTitle?: string | null;
+};
+
 type ProblemDetail = {
   title?: string;
   detail?: string;
@@ -121,6 +126,13 @@ export async function createProspect(input: ProspectCreateInput) {
 export async function updateProspect(id: number, input: ProspectUpdateInput) {
   return apiRequest<Prospect>(`/api/v1/prospects/${id}`, {
     method: "PUT",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function promoteProspect(id: number, input: ProspectPromoteInput = {}) {
+  return apiRequest<Prospect>(`/api/v1/prospects/${id}/promote`, {
+    method: "POST",
     body: JSON.stringify(input)
   });
 }

@@ -10,11 +10,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import app.openlosa.application.ApplicationService;
 import app.openlosa.application.Tag;
 import app.openlosa.application.TagRepository;
 import app.openlosa.common.api.BadRequestException;
 import app.openlosa.common.api.NotFoundException;
 import app.openlosa.prospect.dto.ProspectCreateRequest;
+import app.openlosa.prospect.dto.ProspectPromoteRequest;
 import app.openlosa.prospect.dto.ProspectResponse;
 import app.openlosa.prospect.dto.ProspectUpdateRequest;
 import jakarta.persistence.criteria.JoinType;
@@ -34,10 +36,16 @@ public class ProspectService {
 
     private final ProspectRepository prospectRepository;
     private final TagRepository tagRepository;
+    private final ApplicationService applicationService;
 
-    public ProspectService(ProspectRepository prospectRepository, TagRepository tagRepository) {
+    public ProspectService(
+        ProspectRepository prospectRepository,
+        TagRepository tagRepository,
+        ApplicationService applicationService
+    ) {
         this.prospectRepository = prospectRepository;
         this.tagRepository = tagRepository;
+        this.applicationService = applicationService;
     }
 
     @Transactional(readOnly = true)
@@ -61,6 +69,9 @@ public class ProspectService {
 
     @Transactional
     public ProspectResponse create(ProspectCreateRequest request) {
+        if (request.status() == ProspectStatus.PROMOTED) {
+            throw new BadRequestException("Use promote endpoint to mark a prospect promoted");
+        }
         var prospect = new Prospect(
             cleanRequired(request.name(), "name"),
             request.priority() == null ? ProspectPriority.MEDIUM : request.priority(),
@@ -74,7 +85,7 @@ public class ProspectService {
 
     @Transactional
     public ProspectResponse update(Long id, ProspectUpdateRequest request) {
-        var prospect = requireProspect(id);
+        var prospect = requireProspectForUpdate(id);
         if (request.name() != null) {
             prospect.setName(cleanRequired(request.name(), "name"));
         }
@@ -98,11 +109,29 @@ public class ProspectService {
             prospect.setPriority(request.priority());
         }
         if (request.status() != null) {
+            validateStatusUpdate(prospect, request.status());
             prospect.setStatus(request.status());
         }
         if (request.tagIds() != null) {
             replaceTags(prospect, request.tagIds());
         }
+        return ProspectMapper.toResponse(prospect);
+    }
+
+    @Transactional
+    public ProspectResponse promote(Long id, ProspectPromoteRequest request) {
+        var prospect = requireProspectForUpdate(id);
+        if (prospect.getPromotedApplication() == null) {
+            var application = applicationService.createFromProspect(
+                cleanOrDefault(request == null ? null : request.companyName(), prospect.getName()),
+                cleanOrDefault(request == null ? null : request.roleTitle(), "Opportunity"),
+                prospect.getUrl(),
+                prospect.getNote(),
+                prospect.getTags()
+            );
+            prospect.setPromotedApplication(application);
+        }
+        prospect.setStatus(ProspectStatus.PROMOTED);
         return ProspectMapper.toResponse(prospect);
     }
 
@@ -128,6 +157,11 @@ public class ProspectService {
 
     private Prospect requireProspect(Long id) {
         return prospectRepository.findById(id)
+            .orElseThrow(() -> new NotFoundException("Prospect " + id + " was not found"));
+    }
+
+    private Prospect requireProspectForUpdate(Long id) {
+        return prospectRepository.findByIdForUpdate(id)
             .orElseThrow(() -> new NotFoundException("Prospect " + id + " was not found"));
     }
 
@@ -189,7 +223,21 @@ public class ProspectService {
         return cleaned;
     }
 
+    private String cleanOrDefault(String value, String defaultValue) {
+        var cleaned = clean(value);
+        return cleaned == null ? defaultValue : cleaned;
+    }
+
     private String clean(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private void validateStatusUpdate(Prospect prospect, ProspectStatus status) {
+        if (status == ProspectStatus.PROMOTED && prospect.getPromotedApplication() == null) {
+            throw new BadRequestException("Use promote endpoint to mark a prospect promoted");
+        }
+        if (status != ProspectStatus.PROMOTED && prospect.getPromotedApplication() != null) {
+            throw new BadRequestException("Promoted prospects must stay PROMOTED while linked to an application");
+        }
     }
 }

@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -96,6 +97,35 @@ public class ApplicationService {
     @Transactional
     public ApplicationResponse create(ApplicationCreateRequest request) {
         return ApplicationMapper.toResponse(createApplication(request));
+    }
+
+    @Transactional
+    public JobApplication createFromProspect(
+        String companyName,
+        String roleTitle,
+        String url,
+        String note,
+        Collection<Tag> tags
+    ) {
+        var application = createApplication(new ApplicationCreateRequest(
+            null,
+            companyName,
+            url,
+            note,
+            roleTitle,
+            url,
+            null,
+            ApplicationStatus.SAVED,
+            null,
+            ApplicationSource.PROSPECT,
+            null,
+            note,
+            false
+        ));
+        if (tags != null) {
+            application.getTags().addAll(tags);
+        }
+        return application;
     }
 
     @Transactional

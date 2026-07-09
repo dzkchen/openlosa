@@ -8,6 +8,11 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import jakarta.persistence.LockModeType;
 
 public interface ProspectRepository extends JpaRepository<Prospect, Long>, JpaSpecificationExecutor<Prospect> {
 
@@ -18,4 +23,9 @@ public interface ProspectRepository extends JpaRepository<Prospect, Long>, JpaSp
     @Override
     @EntityGraph(attributePaths = {"tags", "promotedApplication", "promotedApplication.company"})
     Optional<Prospect> findById(Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Prospect p where p.id = :id")
+    @EntityGraph(attributePaths = {"tags", "promotedApplication", "promotedApplication.company"})
+    Optional<Prospect> findByIdForUpdate(@Param("id") Long id);
 }
