@@ -4,6 +4,10 @@ import { navItems } from "./navItems";
 
 type ApiStatus = "checking" | "online" | "offline";
 
+type SidebarProps = {
+  onQuickAdd: () => void;
+};
+
 const apiStatusStyles: Record<ApiStatus, { label: string; text: string; dot: string }> = {
   checking: {
     label: "Checking",
@@ -22,7 +26,7 @@ const apiStatusStyles: Record<ApiStatus, { label: string; text: string; dot: str
   }
 };
 
-export default function Sidebar() {
+export default function Sidebar({ onQuickAdd }: SidebarProps) {
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
   const status = apiStatusStyles[apiStatus];
 
@@ -67,6 +71,17 @@ export default function Sidebar() {
             <p className="truncate text-xs text-muted">Local application workspace</p>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={onQuickAdd}
+          className="mx-2 flex min-h-10 items-center justify-between gap-3 rounded-md border border-line/80 bg-elevated/55 px-3 text-sm font-medium text-text transition hover:border-accent/50 hover:bg-elevated focus-visible:outline-none focus-visible:shadow-focus"
+        >
+          <span>Quick add</span>
+          <kbd className="rounded border border-line/70 bg-canvas/70 px-1.5 py-0.5 text-[11px] font-semibold text-muted">
+            Cmd/Ctrl K
+          </kbd>
+        </button>
 
         <nav aria-label="Primary navigation" className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible">
           {navItems.map((item) => {

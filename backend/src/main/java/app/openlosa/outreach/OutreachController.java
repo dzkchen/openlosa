@@ -49,6 +49,11 @@ class OutreachController {
         return outreachService.list(status, type, contactId, companyId, company, q, sentFrom, sentTo, followUpFrom, followUpTo, sort, dir);
     }
 
+    @GetMapping("/due")
+    List<OutreachResponse> due() {
+        return outreachService.due();
+    }
+
     @GetMapping("/{id}")
     OutreachResponse get(@PathVariable Long id) {
         return outreachService.get(id);

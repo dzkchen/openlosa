@@ -11,6 +11,8 @@ import { contactsQueryKey, listContacts, type Contact } from "../../api/contacts
 import {
   createOutreach,
   deleteOutreach,
+  dueOutreachQueryKey,
+  listDueOutreach,
   listOutreach,
   outreachQueryKey,
   outreachStatuses,
@@ -26,6 +28,7 @@ import {
 import EmptyState from "../../components/layout/EmptyState";
 import PageHeader from "../../components/layout/PageHeader";
 import WorkspacePanel from "../../components/layout/WorkspacePanel";
+import DueTodayList from "./components/DueTodayList";
 
 const typeLabels: Record<OutreachType, string> = {
   COLD_EMAIL: "Cold email",
@@ -382,6 +385,10 @@ export default function OutreachPage() {
     queryKey: outreachQueryKey(params),
     queryFn: () => listOutreach(params)
   });
+  const dueQuery = useQuery({
+    queryKey: dueOutreachQueryKey(),
+    queryFn: listDueOutreach
+  });
   const contactsQuery = useQuery({
     queryKey: contactsQueryKey({ sort: "name", dir: "asc" }),
     queryFn: () => listContacts({ sort: "name", dir: "asc" })
@@ -595,6 +602,13 @@ export default function OutreachPage() {
           setMutationError(null);
           setAddOpen((open) => !open);
         }}
+      />
+      <DueTodayList
+        items={dueQuery.data ?? []}
+        isLoading={dueQuery.isLoading}
+        errorMessage={dueQuery.isError ? buildMutationMessage(dueQuery.error) : null}
+        disabled={updateMutation.isPending}
+        onUpdate={commitUpdate}
       />
       <WorkspacePanel title="Outreach" meta={meta}>
         <div className="-m-4 overflow-hidden rounded-lg border border-line/70">

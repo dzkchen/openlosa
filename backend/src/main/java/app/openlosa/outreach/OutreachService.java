@@ -91,6 +91,18 @@ public class OutreachService {
         return OutreachMapper.toResponse(requireOutreach(id));
     }
 
+    @Transactional(readOnly = true)
+    public List<OutreachResponse> due() {
+        var today = LocalDate.now(clock);
+        return outreachRepository.findAll(dueSpec(today), Sort.by(
+                Sort.Order.asc("status"),
+                Sort.Order.asc("followUpBy"),
+                Sort.Order.asc("createdAt")
+            )).stream()
+            .map(OutreachMapper::toResponse)
+            .toList();
+    }
+
     @Transactional
     public OutreachResponse create(OutreachCreateRequest request) {
         var outreach = new Outreach(
@@ -352,6 +364,16 @@ public class OutreachService {
 
             return cb.and(predicates.toArray(Predicate[]::new));
         };
+    }
+
+    private Specification<Outreach> dueSpec(LocalDate today) {
+        return (root, query, cb) -> cb.or(
+            cb.equal(root.get("status"), TO_SEND),
+            cb.and(
+                cb.equal(root.get("status"), SENT),
+                cb.lessThanOrEqualTo(root.get("followUpBy"), today)
+            )
+        );
     }
 
     private Sort sort(String sort, String dir) {

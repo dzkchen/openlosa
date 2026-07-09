@@ -115,6 +115,10 @@ export function outreachQueryKey(params: OutreachListParams) {
   return ["outreach", params] as const;
 }
 
+export function dueOutreachQueryKey() {
+  return ["outreach", "due"] as const;
+}
+
 export async function listOutreach(params: OutreachListParams = {}) {
   const searchParams = new URLSearchParams();
   appendParam(searchParams, "q", params.q?.trim());
@@ -125,6 +129,10 @@ export async function listOutreach(params: OutreachListParams = {}) {
 
   const query = searchParams.toString();
   return apiRequest<Outreach[]>(`/api/v1/outreach${query ? `?${query}` : ""}`);
+}
+
+export async function listDueOutreach() {
+  return apiRequest<Outreach[]>("/api/v1/outreach/due");
 }
 
 export async function createOutreach(input: OutreachCreateInput) {

@@ -50,6 +50,8 @@ class OutreachIntegrationTest {
     @BeforeEach
     void cleanDatabase() {
         jdbcTemplate.update("DELETE FROM outreach");
+        jdbcTemplate.update("DELETE FROM prospect_tag");
+        jdbcTemplate.update("DELETE FROM prospect");
         jdbcTemplate.update("DELETE FROM contact");
         jdbcTemplate.update("DELETE FROM application_tag");
         jdbcTemplate.update("DELETE FROM status_transition");
@@ -231,6 +233,40 @@ class OutreachIntegrationTest {
         mockMvc.perform(get("/api/v1/outreach/{id}", outreachId))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.sentAt", is("2026-07-04")));
+    }
+
+    @Test
+    void dueOutreachReturnsUnsentAndFollowUpsDueToday() throws Exception {
+        var yesterday = LocalDate.now().minusDays(1).toString();
+        var tomorrow = LocalDate.now().plusDays(1).toString();
+
+        long unsentId = createOutreach("""
+            {
+              "notes": "Draft message"
+            }
+            """);
+        long followUpId = createOutreach("""
+            {
+              "status": "SENT",
+              "sentAt": "%s",
+              "followUpBy": "%s",
+              "notes": "Check for response"
+            }
+            """.formatted(yesterday, yesterday));
+        createOutreach("""
+            {
+              "status": "SENT",
+              "sentAt": "%s",
+              "followUpBy": "%s",
+              "notes": "Not due yet"
+            }
+            """.formatted(yesterday, tomorrow));
+
+        mockMvc.perform(get("/api/v1/outreach/due"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$", hasSize(2)))
+            .andExpect(jsonPath("$[0].id", is((int) followUpId)))
+            .andExpect(jsonPath("$[*].id").value(org.hamcrest.Matchers.containsInAnyOrder((int) unsentId, (int) followUpId)));
     }
 
     private long createContact(String body) throws Exception {
