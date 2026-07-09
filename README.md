@@ -114,6 +114,53 @@ wrap the field in double quotes and write literal quotes as two double quotes.
 For example, use `"Imported from spreadsheet, needs review"` for a note with a
 comma.
 
+## Feed Engine
+
+The optional feed engine runs the pinned upstream intern-engine immediately and
+then every four hours. Start it with:
+
+```sh
+docker compose --profile engine up -d --build engine
+```
+
+OpenLOSA's `engine/config/config.json` is bind-mounted read-only over the
+upstream `data/config.json`. Engine-generated files remain in the `engine_data`
+Docker volume, so editing the tracked config does not replace or erase
+`jobs.json`, `companies.json`, or `health.json`.
+
+Tune these fields in `engine/config/config.json`:
+
+- `cycles`: exact cycle labels to retain and their output order, such as
+  `["Summer 2027", "Fall 2026"]`.
+- `regions`: `["US"]` for United States roles or `["Global"]` to disable
+  location filtering.
+- `role_scope`: `"tech"` for technical roles or `"all"` for all internships.
+- `max_age_days`: discard older postings; `0` disables the age limit.
+- `max_per_company`: cap roles per company and cycle; `0` disables the cap.
+- `allowlist_only`: when `true`, retain only upstream priority-listed
+  companies.
+- `include_international`: when `true`, retain non-US roles in an additional
+  international section.
+- `section_limits`: cap output rows by cycle label. Keep its keys aligned with
+  `cycles`; remove a key to leave that cycle uncapped.
+
+These filtering defaults mirror the pinned upstream revision. When changing
+`cycles`, also update matching `section_limits` keys.
+
+Restart the engine to apply a config change immediately:
+
+```sh
+docker compose --profile engine restart engine
+```
+
+The cycle interval is separate from job filtering. Override the default
+14,400 seconds (four hours) when starting the service:
+
+```sh
+OPENLOSA_ENGINE_INTERVAL_SECONDS=7200 \
+docker compose --profile engine up -d engine
+```
+
 ## Verification
 
 Run the same checks as CI:

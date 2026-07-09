@@ -51,6 +51,7 @@ services:
       ENGINE_INTERVAL_SECONDS: ${OPENLOSA_ENGINE_INTERVAL_SECONDS:-14400}
     volumes:
       - engine_data:/opt/intern-engine/data
+      - ./engine/config/config.json:/opt/intern-engine/data/config.json:ro
 
 volumes:
   engine_data:
