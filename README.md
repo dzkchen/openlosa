@@ -180,6 +180,25 @@ the absence lands a strike, even when the engine re-emits a byte-identical
 next ingest; one that merely disappears closes after it is absent from two
 successive successful ingests. Reappearing postings reopen automatically.
 
+If the engine dies, OpenLOSA keeps working fully — the feed simply goes stale.
+`GET /api/v1/feed/health` reports the last ingest run, the last time engine data
+was applied (`lastSuccessAt`), the open-job count, and whether the feed is
+`stale`. The feed is considered fresh while either the last applied change or the
+last confirmed-unchanged snapshot (a skip that still fingerprinted the file) is
+within the freshness window; a byte-identical `jobs.json` re-emitted for days
+still reads as fresh, while missing-file or lock-contention skips do not. The
+window defaults to 24 hours (the engine's four-hour cycle plus the hourly ingest
+with generous headroom) and is configurable:
+
+```sh
+OPENLOSA_FEED_STALE_AFTER_HOURS=24 \
+mvn spring-boot:run
+```
+
+The feed page shows a non-blocking warning banner when the feed has never
+ingested, has gone stale, or its most recent run failed; a healthy feed shows a
+subtle "updated X ago" note instead.
+
 ## Verification
 
 Run the same checks as CI:

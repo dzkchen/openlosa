@@ -84,8 +84,72 @@ class FeedJob {
         return engineId;
     }
 
+    Long getId() {
+        return id;
+    }
+
+    String getCompanyName() {
+        return companyName;
+    }
+
+    String getTitle() {
+        return title;
+    }
+
+    String getUrl() {
+        return url;
+    }
+
+    String getLocation() {
+        return location;
+    }
+
+    String getSourceAts() {
+        return sourceAts;
+    }
+
+    String getSponsorship() {
+        return sponsorship;
+    }
+
+    LocalDate getPostedAt() {
+        return postedAt;
+    }
+
+    LocalDateTime getFirstSeenAt() {
+        return firstSeenAt;
+    }
+
+    LocalDateTime getLastSeenAt() {
+        return lastSeenAt;
+    }
+
     boolean isOpen() {
         return open;
+    }
+
+    boolean isHidden() {
+        return hidden;
+    }
+
+    void setHidden(boolean hidden) {
+        this.hidden = hidden;
+    }
+
+    Prospect getSavedProspect() {
+        return savedProspect;
+    }
+
+    void setSavedProspect(Prospect savedProspect) {
+        this.savedProspect = savedProspect;
+    }
+
+    JobApplication getCreatedApplication() {
+        return createdApplication;
+    }
+
+    void setCreatedApplication(JobApplication createdApplication) {
+        this.createdApplication = createdApplication;
     }
 
     void applySnapshot(FeedJobSnapshot snapshot, LocalDateTime seenAt) {

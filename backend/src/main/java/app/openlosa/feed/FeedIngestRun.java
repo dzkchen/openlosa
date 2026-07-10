@@ -118,8 +118,28 @@ class FeedIngestRun {
         );
     }
 
+    LocalDateTime getRanAt() {
+        return ranAt;
+    }
+
+    int getJobsSeen() {
+        return jobsSeen;
+    }
+
+    int getJobsNew() {
+        return jobsNew;
+    }
+
+    int getJobsClosed() {
+        return jobsClosed;
+    }
+
     FeedIngestStatus getStatus() {
         return status;
+    }
+
+    String getMessage() {
+        return message;
     }
 
     String getFileFingerprint() {

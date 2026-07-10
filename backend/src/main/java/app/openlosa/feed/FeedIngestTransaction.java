@@ -16,11 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 class FeedIngestTransaction {
 
-    private static final List<FeedIngestStatus> PROCESSED_STATUSES = List.of(
-        FeedIngestStatus.SUCCESS,
-        FeedIngestStatus.SKIPPED
-    );
-
     private final FeedJobRepository feedJobRepository;
     private final FeedIngestRunRepository runRepository;
     private final Clock clock;
@@ -60,7 +55,7 @@ class FeedIngestTransaction {
         boolean openSetUnchanged = feedJobRepository.findOpenEngineIds()
             .equals(incomingEngineIds);
         boolean sameFingerprint = runRepository
-            .findFirstByFileFingerprintIsNotNullAndStatusInOrderByIdDesc(PROCESSED_STATUSES)
+            .findFirstByFileFingerprintIsNotNullAndStatusInOrderByIdDesc(FeedIngestStatus.FINGERPRINTED)
             .map(FeedIngestRun::getFileFingerprint)
             .filter(snapshot.fingerprint()::equals)
             .isPresent();

@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.List;
 import java.util.Map;
 
 import javax.sql.DataSource;
@@ -52,6 +53,7 @@ class FeedIngestIntegrationTest {
     void cleanDatabaseAndFile() throws IOException {
         jdbcTemplate.update("DELETE FROM feed_ingest_run");
         jdbcTemplate.update("DELETE FROM feed_job");
+        jdbcTemplate.update("DELETE FROM prospect");
         Files.deleteIfExists(JOBS_FILE);
     }
 
@@ -213,6 +215,204 @@ class FeedIngestIntegrationTest {
 
         assertThat(skippedRun.getStatus()).isEqualTo(FeedIngestStatus.SKIPPED);
         assertBetaState(true, 0);
+    }
+
+    @Test
+    void reingestingSameFileCreatesNoDuplicates() throws IOException {
+        writeJobs(snapshot("Platform Intern", true));
+        FeedIngestRun firstRun = ingestService.runOnce();
+        assertThat(firstRun.getStatus()).isEqualTo(FeedIngestStatus.SUCCESS);
+
+        // Stamp user-owned fields that the ingest must never clobber: a hidden
+        // flag and a promotion FK to a saved prospect.
+        jdbcTemplate.update("INSERT INTO prospect (name) VALUES ('Saved by user')");
+        Long prospectId = jdbcTemplate.queryForObject(
+            "SELECT id FROM prospect WHERE name = 'Saved by user'", Long.class
+        );
+        jdbcTemplate.update(
+            "UPDATE feed_job SET hidden = TRUE, saved_prospect_id = ? WHERE engine_id = 'lever:beta:456'",
+            prospectId
+        );
+        Object firstSeenAtBefore = jobField("greenhouse:alpha:123", "first_seen_at");
+
+        // Path 1: byte-identical re-ingest short-circuits to SKIPPED on an
+        // unchanged fingerprint + open set.
+        FeedIngestRun sameContentRun = ingestService.runOnce();
+        assertThat(sameContentRun.getStatus()).isEqualTo(FeedIngestStatus.SKIPPED);
+
+        // Path 2: a byte-identical rewrite (fresh mtime) still hashes the same,
+        // so it also SKIPS -- mtime alone does not force a re-import.
+        writeJobs(snapshot("Platform Intern", true));
+        FeedIngestRun rewrittenRun = ingestService.runOnce();
+        assertThat(rewrittenRun.getStatus()).isEqualTo(FeedIngestStatus.SKIPPED);
+
+        assertNoDuplicateFeedJobs(2);
+        assertUserFieldsPreserved(prospectId, firstSeenAtBefore);
+        assertThat(missedIngests("greenhouse:alpha:123")).isZero();
+        assertThat(missedIngests("lever:beta:456")).isZero();
+        assertThat(runStatusCount(FeedIngestStatus.SUCCESS)).isEqualTo(1);
+        assertThat(runStatusCount(FeedIngestStatus.SKIPPED)).isEqualTo(2);
+
+        // Path 3: a genuine re-import of identical content. Dropping the run
+        // history clears the fingerprint short-circuit, so the same bytes are
+        // re-applied to the existing rows via applySnapshot. This must upsert in
+        // place (no dupes, no new rows) and still leave user-owned fields alone.
+        jdbcTemplate.update("DELETE FROM feed_ingest_run");
+        FeedIngestRun reimportRun = ingestService.runOnce();
+        assertThat(reimportRun.getStatus()).isEqualTo(FeedIngestStatus.SUCCESS);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT jobs_new FROM feed_ingest_run ORDER BY id DESC LIMIT 1", Integer.class
+        )).isZero();
+        assertNoDuplicateFeedJobs(2);
+        assertUserFieldsPreserved(prospectId, firstSeenAtBefore);
+        assertThat(missedIngests("lever:beta:456")).isZero();
+    }
+
+    @Test
+    void missingAtsSourceDoesNotCloseItsPostingsAfterOneCycle() throws IOException {
+        writeJobs(twoSourceSnapshot("Backend Intern v1"));
+        assertThat(ingestService.runOnce().getStatus()).isEqualTo(FeedIngestStatus.SUCCESS);
+        assertLeverSourceState(true, 0);
+        assertGreenhouseSourceState(true, 0);
+
+        // The lever ATS drops out of the feed entirely (a partial upstream
+        // cycle). One successful ingest is a single strike: its postings stay
+        // open under the two-strike rule.
+        writeJobs(greenhouseOnlySnapshot("Backend Intern v2"));
+        assertThat(ingestService.runOnce().getStatus()).isEqualTo(FeedIngestStatus.SUCCESS);
+        assertLeverSourceState(true, 1);
+        assertGreenhouseSourceState(true, 0);
+
+        // A failed run in between (malformed JSON) must not advance the strike.
+        writeJobs("{ not valid json");
+        assertThat(ingestService.runOnce().getStatus()).isEqualTo(FeedIngestStatus.FAILED);
+        assertLeverSourceState(true, 1);
+
+        // A skipped run in between (the file vanished) must not advance it either.
+        Files.delete(JOBS_FILE);
+        assertThat(ingestService.runOnce().getStatus()).isEqualTo(FeedIngestStatus.SKIPPED);
+        assertLeverSourceState(true, 1);
+
+        // A second consecutive, distinct successful ingest still missing lever
+        // lands the second strike and closes exactly the lever postings.
+        writeJobs(greenhouseOnlySnapshot("Backend Intern v3"));
+        assertThat(ingestService.runOnce().getStatus()).isEqualTo(FeedIngestStatus.SUCCESS);
+        assertLeverSourceState(false, 2);
+        assertGreenhouseSourceState(true, 0);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT jobs_closed FROM feed_ingest_run ORDER BY id DESC LIMIT 1", Integer.class
+        )).isEqualTo(2);
+    }
+
+    @Test
+    void reappearingAtsSourceResetsMissCounterBeforeSecondStrike() throws IOException {
+        writeJobs(twoSourceSnapshot("Backend Intern v1"));
+        ingestService.runOnce();
+        assertLeverSourceState(true, 0);
+
+        // First strike: lever is absent from one successful cycle.
+        writeJobs(greenhouseOnlySnapshot("Backend Intern v2"));
+        ingestService.runOnce();
+        assertLeverSourceState(true, 1);
+
+        // Lever reappears -> the miss counter resets to zero.
+        writeJobs(twoSourceSnapshot("Backend Intern v3"));
+        ingestService.runOnce();
+        assertLeverSourceState(true, 0);
+
+        // Lever drops out again. Because the counter reset, this is only the
+        // first strike again, so the postings stay open (no premature close).
+        writeJobs(greenhouseOnlySnapshot("Backend Intern v4"));
+        ingestService.runOnce();
+        assertLeverSourceState(true, 1);
+    }
+
+    private int missedIngests(String engineId) {
+        return ((Number) jobField(engineId, "missed_successful_ingests")).intValue();
+    }
+
+    private Object jobField(String engineId, String column) {
+        return jdbcTemplate.queryForMap(
+            "SELECT * FROM feed_job WHERE engine_id = ?", engineId
+        ).get(column);
+    }
+
+    private void assertNoDuplicateFeedJobs(int expectedRows) {
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM feed_job", Integer.class))
+            .isEqualTo(expectedRows);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT COUNT(DISTINCT engine_id) FROM feed_job", Integer.class
+        )).isEqualTo(expectedRows);
+    }
+
+    private void assertUserFieldsPreserved(Long prospectId, Object firstSeenAtBefore) {
+        Map<String, Object> beta = jdbcTemplate.queryForMap(
+            "SELECT hidden, saved_prospect_id FROM feed_job WHERE engine_id = 'lever:beta:456'"
+        );
+        assertThat((Boolean) beta.get("hidden")).isTrue();
+        assertThat(((Number) beta.get("saved_prospect_id")).longValue()).isEqualTo(prospectId);
+        assertThat(jobField("greenhouse:alpha:123", "first_seen_at")).isEqualTo(firstSeenAtBefore);
+    }
+
+    private void assertLeverSourceState(boolean open, int missed) {
+        assertSourceState("lever", 2, open, missed);
+    }
+
+    private void assertGreenhouseSourceState(boolean open, int missed) {
+        assertSourceState("greenhouse", 2, open, missed);
+    }
+
+    private void assertSourceState(String sourceAts, int expectedRows, boolean open, int missed) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+            "SELECT is_open, missed_successful_ingests FROM feed_job WHERE source_ats = ?",
+            sourceAts
+        );
+        assertThat(rows).hasSize(expectedRows);
+        for (Map<String, Object> row : rows) {
+            assertThat((Boolean) row.get("is_open")).isEqualTo(open);
+            assertThat(((Number) row.get("missed_successful_ingests")).intValue()).isEqualTo(missed);
+        }
+    }
+
+    private int runStatusCount(FeedIngestStatus status) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM feed_ingest_run WHERE status = ?", Integer.class, status.name()
+        );
+    }
+
+    private String twoSourceSnapshot(String greenhouseTitle) {
+        return jobsJson(
+            openEntry("greenhouse:acme:1", "Acme Corp", greenhouseTitle, "greenhouse"),
+            openEntry("greenhouse:acme:2", "Acme Corp", greenhouseTitle + " II", "greenhouse"),
+            openEntry("lever:globex:1", "Globex", "Backend Intern", "lever"),
+            openEntry("lever:globex:2", "Globex", "Frontend Intern", "lever")
+        );
+    }
+
+    private String greenhouseOnlySnapshot(String greenhouseTitle) {
+        return jobsJson(
+            openEntry("greenhouse:acme:1", "Acme Corp", greenhouseTitle, "greenhouse"),
+            openEntry("greenhouse:acme:2", "Acme Corp", greenhouseTitle + " II", "greenhouse")
+        );
+    }
+
+    private String jobsJson(String... entries) {
+        return "{\n" + String.join(",\n", entries) + "\n}\n";
+    }
+
+    private String openEntry(String engineId, String company, String title, String source) {
+        return """
+            "%s": {
+              "id": "%s",
+              "company": "%s",
+              "title": "%s",
+              "url": "https://example.com/%s",
+              "location": "Remote",
+              "source": "%s",
+              "sponsorship": "unknown",
+              "posted_at": null,
+              "is_open": true
+            }""".formatted(engineId, engineId, company, title, engineId, source);
     }
 
     private void assertBetaState(boolean open, int missedIngests) {

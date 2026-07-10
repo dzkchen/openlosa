@@ -10,4 +10,8 @@ interface FeedIngestRunRepository extends JpaRepository<FeedIngestRun, Long> {
     Optional<FeedIngestRun> findFirstByFileFingerprintIsNotNullAndStatusInOrderByIdDesc(
         Collection<FeedIngestStatus> statuses
     );
+
+    Optional<FeedIngestRun> findFirstByOrderByIdDesc();
+
+    Optional<FeedIngestRun> findFirstByStatusOrderByIdDesc(FeedIngestStatus status);
 }

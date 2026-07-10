@@ -95,6 +95,14 @@ public class ProspectService {
     }
 
     @Transactional
+    public Prospect createFromFeed(String name, String url, String note) {
+        var prospect = new Prospect(cleanRequired(name, "name"), ProspectPriority.MEDIUM, ProspectStatus.NEW);
+        prospect.setUrl(clean(url));
+        prospect.setNote(clean(note));
+        return prospectRepository.save(prospect);
+    }
+
+    @Transactional
     public ProspectResponse update(Long id, ProspectUpdateRequest request) {
         var prospect = requireProspectForUpdate(id);
         if (request.name() != null) {

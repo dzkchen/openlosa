@@ -147,6 +147,27 @@ public class ApplicationService {
     }
 
     @Transactional
+    public JobApplication createFromFeed(String companyName, String roleTitle, String postingUrl, String location) {
+        // Goes through createApplication so the initial status_transition is written and the
+        // company is resolved by name, keeping the Sankey/stats invariant intact.
+        return createApplication(new ApplicationCreateRequest(
+            null,
+            companyName,
+            null,
+            null,
+            roleTitle,
+            postingUrl,
+            location,
+            ApplicationStatus.SAVED,
+            null,
+            ApplicationSource.FEED,
+            null,
+            null,
+            false
+        ));
+    }
+
+    @Transactional
     public ApplicationImportResponse importCsv(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new BadRequestException("CSV file is required");
