@@ -349,7 +349,9 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
             <button
               type="submit"
               disabled={formDisabled || !selectedContactId}
-              className="inline-flex h-10 items-center justify-center rounded-md bg-text px-4 text-sm font-medium text-canvas transition hover:bg-text/90 focus-visible:outline-none focus-visible:shadow-focus disabled:cursor-wait disabled:bg-soft disabled:text-text/60"
+              className={`inline-flex h-10 items-center justify-center rounded-md bg-text px-4 text-sm font-medium text-canvas transition hover:bg-text/90 focus-visible:outline-none focus-visible:shadow-focus disabled:bg-soft disabled:text-text/60 ${
+                formDisabled ? "disabled:cursor-wait" : "disabled:cursor-not-allowed"
+              }`}
             >
               {lookupMutation.isPending ? "Finding" : "Find email"}
             </button>
@@ -451,7 +453,9 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
                         type="button"
                         disabled={chooseMutation.isPending || isChosen}
                         onClick={() => chooseCandidate(candidate)}
-                        className="h-9 rounded-md border border-accent/60 px-3 text-sm font-semibold text-accent transition hover:bg-accent/10 disabled:cursor-wait disabled:border-line/70 disabled:text-soft"
+                        className={`h-9 rounded-md border border-accent/60 px-3 text-sm font-semibold text-accent transition hover:bg-accent/10 disabled:border-line/70 disabled:text-soft ${
+                          chooseMutation.isPending ? "disabled:cursor-wait" : "disabled:cursor-not-allowed"
+                        }`}
                       >
                         {isChosen ? "Chosen" : "Choose"}
                       </button>
