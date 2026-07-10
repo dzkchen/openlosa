@@ -43,7 +43,9 @@ class DatabaseMigrationTest {
                   'outreach',
                   'prospect',
                   'prospect_tag',
-                  'email_lookup'
+                  'email_lookup',
+                  'feed_job',
+                  'feed_ingest_run'
               )
             """,
             Integer.class
@@ -63,7 +65,7 @@ class DatabaseMigrationTest {
             SELECT COUNT(*)
             FROM flyway_schema_history
             WHERE success = 1
-              AND version IN ('1', '2', '3', '4', '5', '6')
+              AND version IN ('1', '2', '3', '4', '5', '6', '7')
             """,
             Integer.class
         );
@@ -102,12 +104,44 @@ class DatabaseMigrationTest {
             """,
             Integer.class
         );
+        Integer feedJobIndexes = jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = 'feed_job'
+              AND index_name IN (
+                  'uk_feed_job_engine_id',
+                  'ix_feed_job_open_hidden_posted',
+                  'ix_feed_job_source_ats',
+                  'ix_feed_job_last_seen_at',
+                  'ix_feed_job_saved_prospect_id',
+                  'ix_feed_job_created_application_id'
+              )
+            """,
+            Integer.class
+        );
+        Integer feedRunIndexes = jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = 'feed_ingest_run'
+              AND index_name IN (
+                  'ix_feed_ingest_run_status_ran_at',
+                  'ix_feed_ingest_run_ran_at'
+              )
+            """,
+            Integer.class
+        );
 
-        assertThat(tables).isEqualTo(10);
+        assertThat(tables).isEqualTo(12);
         assertThat(applicationTagIndexes).isEqualTo(1);
         assertThat(outreachIndexes).isEqualTo(3);
         assertThat(prospectIndexes).isEqualTo(3);
         assertThat(emailLookupIndexes).isEqualTo(3);
-        assertThat(requiredFlywayMigrations).isEqualTo(6);
+        assertThat(feedJobIndexes).isEqualTo(8);
+        assertThat(feedRunIndexes).isEqualTo(3);
+        assertThat(requiredFlywayMigrations).isEqualTo(7);
     }
 }

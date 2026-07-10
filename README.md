@@ -124,9 +124,11 @@ docker compose --profile engine up -d --build engine
 ```
 
 OpenLOSA's `engine/config/config.json` is bind-mounted read-only over the
-upstream `data/config.json`. Engine-generated files remain in the `engine_data`
-Docker volume, so editing the tracked config does not replace or erase
-`jobs.json`, `companies.json`, or `health.json`.
+upstream `data/config.json`. The engine's complete data directory stays in the
+`engine_data` named volume, preserving both upstream seed files and generated
+state. After each successful cycle, `jobs.json` and `health.json` are copied
+atomically to the gitignored host directory `engine/export/`, where the native
+backend can read them.
 
 Tune these fields in `engine/config/config.json`:
 
@@ -160,6 +162,23 @@ The cycle interval is separate from job filtering. Override the default
 OPENLOSA_ENGINE_INTERVAL_SECONDS=7200 \
 docker compose --profile engine up -d engine
 ```
+
+The backend ingests `engine/export/jobs.json` hourly after an initial 10-second
+delay. Override the input path or schedule when needed:
+
+```sh
+OPENLOSA_ENGINE_JOBS_FILE=/absolute/path/to/jobs.json \
+OPENLOSA_FEED_INGEST_INTERVAL=PT30M \
+mvn spring-boot:run
+```
+
+Missing or malformed files are recorded without applying a closing strike. An
+unchanged file is skipped only while the set of open postings already matches
+the feed; if any open posting is absent from the feed, the ingest still runs so
+the absence lands a strike, even when the engine re-emits a byte-identical
+`jobs.json`. A posting the feed explicitly marks `is_open: false` closes on the
+next ingest; one that merely disappears closes after it is absent from two
+successive successful ingests. Reappearing postings reopen automatically.
 
 ## Verification
 

@@ -49,9 +49,11 @@ services:
     restart: unless-stopped
     environment:
       ENGINE_INTERVAL_SECONDS: ${OPENLOSA_ENGINE_INTERVAL_SECONDS:-14400}
+      ENGINE_EXPORT_DIR: /opt/openlosa-export
     volumes:
       - engine_data:/opt/intern-engine/data
       - ./engine/config/config.json:/opt/intern-engine/data/config.json:ro
+      - ./engine/export:/opt/openlosa-export
 
 volumes:
   engine_data:

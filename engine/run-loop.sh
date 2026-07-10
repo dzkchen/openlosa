@@ -3,6 +3,7 @@
 set -u
 
 interval_seconds="${ENGINE_INTERVAL_SECONDS:-14400}"
+export_dir="${ENGINE_EXPORT_DIR:-}"
 
 case "${interval_seconds}" in
     ''|*[!0-9]*|0)
@@ -12,6 +13,24 @@ case "${interval_seconds}" in
 esac
 
 child_pid=
+
+export_outputs() {
+    [ -n "${export_dir}" ] || return 0
+    mkdir -p "${export_dir}"
+
+    export_status=0
+    for filename in jobs.json health.json; do
+        [ -f "data/${filename}" ] || continue
+        temporary="${export_dir}/.${filename}.$$"
+        if ! cp "data/${filename}" "${temporary}" \
+            || ! mv "${temporary}" "${export_dir}/${filename}"; then
+            rm -f "${temporary}"
+            echo "Failed to export ${filename}" >&2
+            export_status=1
+        fi
+    done
+    return "${export_status}"
+}
 
 terminate() {
     trap - INT TERM
@@ -30,7 +49,11 @@ while true; do
     child_pid=$!
 
     if wait "${child_pid}"; then
-        echo "intern-engine cycle completed"
+        if export_outputs; then
+            echo "intern-engine cycle completed"
+        else
+            echo "intern-engine cycle completed but output export failed; retrying after ${interval_seconds} seconds" >&2
+        fi
     else
         status=$?
         echo "intern-engine cycle failed with exit code ${status}; retrying after ${interval_seconds} seconds" >&2
