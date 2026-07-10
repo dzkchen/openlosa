@@ -15,6 +15,7 @@ import app.openlosa.application.ApplicationService;
 import app.openlosa.application.Tag;
 import app.openlosa.application.TagRepository;
 import app.openlosa.common.api.BadRequestException;
+import app.openlosa.common.api.LikeQueries;
 import app.openlosa.common.api.NotFoundException;
 import app.openlosa.prospect.dto.ProspectCreateRequest;
 import app.openlosa.prospect.dto.ProspectPromoteRequest;
@@ -34,6 +35,7 @@ public class ProspectService {
         "createdAt", "createdAt",
         "updatedAt", "updatedAt"
     );
+    private static final int NAME_MAX_LENGTH = 255;
 
     private final ProspectRepository prospectRepository;
     private final TagRepository tagRepository;
@@ -96,7 +98,8 @@ public class ProspectService {
 
     @Transactional
     public Prospect createFromFeed(String name, String url, String note) {
-        var prospect = new Prospect(cleanRequired(name, "name"), ProspectPriority.MEDIUM, ProspectStatus.NEW);
+        var prospect = new Prospect(
+            truncate(cleanRequired(name, "name"), NAME_MAX_LENGTH), ProspectPriority.MEDIUM, ProspectStatus.NEW);
         prospect.setUrl(clean(url));
         prospect.setNote(clean(note));
         return prospectRepository.save(prospect);
@@ -210,14 +213,14 @@ public class ProspectService {
                 }
                 var applicationJoin = root.join("promotedApplication", JoinType.LEFT);
                 var companyJoin = applicationJoin.join("company", JoinType.LEFT);
-                String like = "%" + q.trim().toLowerCase() + "%";
+                String like = LikeQueries.contains(q);
                 predicates.add(cb.or(
-                    cb.like(cb.lower(root.get("name")), like),
-                    cb.like(cb.lower(root.get("url")), like),
-                    cb.like(cb.lower(root.get("note")), like),
-                    cb.like(cb.lower(tagJoin.get("name")), like),
-                    cb.like(cb.lower(applicationJoin.get("roleTitle")), like),
-                    cb.like(cb.lower(companyJoin.get("name")), like)
+                    cb.like(cb.lower(root.get("name")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(root.get("url")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(root.get("note")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(tagJoin.get("name")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(applicationJoin.get("roleTitle")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(companyJoin.get("name")), like, LikeQueries.ESCAPE)
                 ));
             }
 
@@ -249,6 +252,13 @@ public class ProspectService {
 
     private String clean(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength - 1) + "…";
     }
 
     private void validateStatusUpdate(Prospect prospect, ProspectStatus status) {

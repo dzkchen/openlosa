@@ -24,6 +24,8 @@ import {
   type ApplicationUpdateInput,
   type JobApplication
 } from "../../../api/applications";
+import { errorMessage } from "../../../api/client";
+import { formatDate } from "../../../utils/format";
 import EmptyState from "../../../components/layout/EmptyState";
 import WorkspacePanel from "../../../components/layout/WorkspacePanel";
 
@@ -351,16 +353,6 @@ function NewApplicationForm({ favoriteOnly, isSaving, onCancel, onSubmit }: NewA
   );
 }
 
-function formatDate(value: string | null) {
-  if (!value) {
-    return "Not set";
-  }
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(`${value}T00:00:00`));
-}
-
-function buildMutationMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong.";
-}
 
 export default function ApplicationTracker({
   addOpen,
@@ -699,13 +691,13 @@ export default function ApplicationTracker({
 
         {mutationError ? (
           <div className="border-b border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">
-            {buildMutationMessage(mutationError)}
+            {errorMessage(mutationError)}
           </div>
         ) : null}
 
         {query.error ? (
           <div className="p-4">
-            <EmptyState title="Could not load applications" detail={buildMutationMessage(query.error)} />
+            <EmptyState title="Could not load applications" detail={errorMessage(query.error)} />
           </div>
         ) : query.isLoading ? (
           <div className="p-4">

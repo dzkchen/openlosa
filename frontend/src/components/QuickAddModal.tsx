@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { errorMessage } from "../api/client";
 import { createProspect } from "../api/prospects";
 import { createTag, listTags, tagsQueryKey } from "../api/tags";
 import type { Tag } from "../api/applications";
@@ -83,10 +84,6 @@ function getFocusableElements(root: HTMLElement | null) {
       'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
     )
   ).filter((element) => !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true");
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong.";
 }
 
 export default function QuickAddModal({ open, onClose }: QuickAddModalProps) {

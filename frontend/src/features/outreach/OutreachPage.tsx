@@ -7,7 +7,9 @@ import {
   type ColumnDef,
   type SortingState
 } from "@tanstack/react-table";
+import { errorMessage } from "../../api/client";
 import { contactsQueryKey, listContacts, type Contact } from "../../api/contacts";
+import { formatDate } from "../../utils/format";
 import {
   createOutreach,
   deleteOutreach,
@@ -350,16 +352,6 @@ function NewOutreachForm({ contacts, isSaving, onCancel, onSubmit }: NewOutreach
   );
 }
 
-function formatDate(value: string | null) {
-  if (!value) {
-    return "Not set";
-  }
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(`${value}T00:00:00`));
-}
-
-function buildMutationMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong.";
-}
 
 export default function OutreachPage() {
   const queryClient = useQueryClient();
@@ -631,7 +623,7 @@ export default function OutreachPage() {
       <DueTodayList
         items={dueQuery.data ?? []}
         isLoading={dueQuery.isLoading}
-        errorMessage={dueQuery.isError ? buildMutationMessage(dueQuery.error) : null}
+        errorMessage={dueQuery.isError ? errorMessage(dueQuery.error) : null}
         disabled={updateMutation.isPending}
         onUpdate={commitUpdate}
       />
@@ -703,13 +695,13 @@ export default function OutreachPage() {
 
           {mutationError ? (
             <div className="border-b border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">
-              {buildMutationMessage(mutationError)}
+              {errorMessage(mutationError)}
             </div>
           ) : null}
 
           {query.error ? (
             <div className="p-4">
-              <EmptyState title="Could not load outreach" detail={buildMutationMessage(query.error)} />
+              <EmptyState title="Could not load outreach" detail={errorMessage(query.error)} />
             </div>
           ) : query.isLoading ? (
             <div className="p-4">

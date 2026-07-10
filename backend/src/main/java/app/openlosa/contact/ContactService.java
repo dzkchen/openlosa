@@ -16,6 +16,7 @@ import app.openlosa.contact.dto.ContactCreateRequest;
 import app.openlosa.contact.dto.ContactResponse;
 import app.openlosa.contact.dto.ContactUpdateRequest;
 import app.openlosa.common.api.BadRequestException;
+import app.openlosa.common.api.LikeQueries;
 import app.openlosa.common.api.NotFoundException;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
@@ -190,7 +191,7 @@ public class ContactService {
                 predicates.add(cb.equal(companyJoin.get("id"), companyId));
             }
             if (StringUtils.hasText(company)) {
-                predicates.add(cb.like(cb.lower(companyJoin.get("name")), "%" + company.trim().toLowerCase() + "%"));
+                predicates.add(cb.like(cb.lower(companyJoin.get("name")), LikeQueries.contains(company), LikeQueries.ESCAPE));
             }
             if (contactedFrom != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("lastContactedAt"), contactedFrom));
@@ -199,14 +200,14 @@ public class ContactService {
                 predicates.add(cb.lessThanOrEqualTo(root.get("lastContactedAt"), contactedTo));
             }
             if (StringUtils.hasText(q)) {
-                String like = "%" + q.trim().toLowerCase() + "%";
+                String like = LikeQueries.contains(q);
                 predicates.add(cb.or(
-                    cb.like(cb.lower(root.get("name")), like),
-                    cb.like(cb.lower(root.get("title")), like),
-                    cb.like(cb.lower(root.get("email")), like),
-                    cb.like(cb.lower(root.get("linkedinUrl")), like),
-                    cb.like(cb.lower(root.get("notes")), like),
-                    cb.like(cb.lower(companyJoin.get("name")), like)
+                    cb.like(cb.lower(root.get("name")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(root.get("title")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(root.get("email")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(root.get("linkedinUrl")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(root.get("notes")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(companyJoin.get("name")), like, LikeQueries.ESCAPE)
                 ));
             }
 

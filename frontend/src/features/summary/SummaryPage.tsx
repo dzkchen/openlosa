@@ -16,10 +16,7 @@ import PageHeader from "../../components/layout/PageHeader";
 import WorkspacePanel from "../../components/layout/WorkspacePanel";
 import DueTodayList from "../outreach/components/DueTodayList";
 import PipelineSankey from "./components/PipelineSankey";
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
+import { errorMessage } from "../../api/client";
 
 export default function SummaryPage() {
   const queryClient = useQueryClient();

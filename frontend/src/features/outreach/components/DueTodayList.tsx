@@ -1,4 +1,5 @@
 import type { Outreach, OutreachStatus, OutreachUpdateInput } from "../../../api/outreach";
+import { formatDate } from "../../../utils/format";
 
 const statusLabels: Record<OutreachStatus, string> = {
   TO_SEND: "To send",
@@ -15,13 +16,6 @@ type DueTodayListProps = {
   onUpdate: (id: number, input: OutreachUpdateInput) => void;
 };
 
-function formatDate(value: string | null) {
-  if (!value) {
-    return "No date";
-  }
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(`${value}T00:00:00`));
-}
-
 function itemTitle(item: Outreach) {
   if (item.contact) {
     return item.contact.name;
@@ -36,7 +30,7 @@ function itemDetail(item: Outreach) {
   const pieces = [
     item.company?.name,
     item.contact?.email,
-    item.followUpBy ? `Follow-up ${formatDate(item.followUpBy)}` : null,
+    item.followUpBy ? `Follow-up ${formatDate(item.followUpBy, "No date")}` : null,
     item.notes
   ].filter(Boolean);
   return pieces.join(" · ");

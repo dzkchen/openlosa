@@ -8,6 +8,8 @@ import {
   type SortingState
 } from "@tanstack/react-table";
 import type { Tag } from "../../api/applications";
+import { errorMessage } from "../../api/client";
+import { formatDate } from "../../utils/format";
 import {
   createProspect,
   deleteProspect,
@@ -393,17 +395,6 @@ function PromoteProspectForm({ isSaving, onCancel, onSubmit, prospect }: Promote
   );
 }
 
-function formatDate(value: string | null) {
-  if (!value) {
-    return "Not set";
-  }
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(`${value}T00:00:00`));
-}
-
-function buildMutationMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong.";
-}
-
 export default function ProspectsPage() {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
@@ -742,12 +733,12 @@ export default function ProspectsPage() {
           ) : null}
           {mutationError ? (
             <div className="border-b border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">
-              {buildMutationMessage(mutationError)}
+              {errorMessage(mutationError)}
             </div>
           ) : null}
           {query.isError ? (
             <div className="border-b border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">
-              {buildMutationMessage(query.error)}
+              {errorMessage(query.error)}
             </div>
           ) : null}
           <div className="overflow-x-auto">

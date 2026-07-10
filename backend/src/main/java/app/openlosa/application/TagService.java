@@ -12,6 +12,7 @@ import org.springframework.util.StringUtils;
 import app.openlosa.application.dto.TagRequest;
 import app.openlosa.application.dto.TagResponse;
 import app.openlosa.common.api.BadRequestException;
+import app.openlosa.common.api.LikeQueries;
 import app.openlosa.common.api.NotFoundException;
 import jakarta.persistence.criteria.Predicate;
 
@@ -71,9 +72,9 @@ public class TagService {
                 return cb.conjunction();
             }
 
-            String like = "%" + q.trim().toLowerCase() + "%";
-            Predicate name = cb.like(cb.lower(root.get("name")), like);
-            Predicate color = cb.like(cb.lower(root.get("color")), like);
+            String like = LikeQueries.contains(q);
+            Predicate name = cb.like(cb.lower(root.get("name")), like, LikeQueries.ESCAPE);
+            Predicate color = cb.like(cb.lower(root.get("color")), like, LikeQueries.ESCAPE);
             return cb.or(name, color);
         };
     }

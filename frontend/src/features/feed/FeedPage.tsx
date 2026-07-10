@@ -21,6 +21,8 @@ import {
   type FeedListParams,
   type FeedSortField
 } from "../../api/feed";
+import { errorMessage } from "../../api/client";
+import { formatDate } from "../../utils/format";
 import EmptyState from "../../components/layout/EmptyState";
 import PageHeader from "../../components/layout/PageHeader";
 import WorkspacePanel from "../../components/layout/WorkspacePanel";
@@ -29,20 +31,8 @@ const PAGE_SIZE = 25;
 
 type OpenFilter = "" | "open" | "closed";
 
-function formatDate(value: string | null) {
-  if (!value) {
-    return "—";
-  }
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(`${value.slice(0, 10)}T00:00:00`));
-}
-
-function buildErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong.";
-}
-
 const RELATIVE_TIME = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
-// Backend timestamps are UTC LocalDateTimes without an offset; treat them as UTC.
 function parseUtc(value: string) {
   return new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value}Z`);
 }
@@ -63,8 +53,6 @@ function formatRelative(value: string) {
   return RELATIVE_TIME.format(diffSeconds, "second");
 }
 
-// Renders a non-blocking warning banner only when the feed is unhealthy: never
-// ingested, gone stale, or its last run failed. A healthy feed renders nothing.
 function FeedStalenessBanner({ health }: { health: FeedHealth }) {
   const { lastRun, lastSuccessAt, stale, staleAfterHours } = health;
   const lastFailed = lastRun?.status === "FAILED";
@@ -98,8 +86,90 @@ function FeedStalenessBanner({ health }: { health: FeedHealth }) {
   );
 }
 
-export default function FeedPage() {
+function FeedRowActions({
+  job,
+  onActionStart,
+  onActionError
+}: {
+  job: FeedJob;
+  onActionStart: () => void;
+  onActionError: (error: unknown) => void;
+}) {
   const queryClient = useQueryClient();
+
+  const invalidate = (keys: readonly (readonly string[])[]) => {
+    for (const queryKey of keys) {
+      void queryClient.invalidateQueries({ queryKey });
+    }
+  };
+
+  const saveProspectMutation = useMutation({
+    mutationFn: () => saveFeedJobProspect(job.id),
+    onMutate: onActionStart,
+    onError: onActionError,
+    onSuccess: () => invalidate([feedJobsQueryKey(), ["prospects"]])
+  });
+
+  const createApplicationMutation = useMutation({
+    mutationFn: () => createFeedJobApplication(job.id),
+    onMutate: onActionStart,
+    onError: onActionError,
+    onSuccess: () => invalidate([feedJobsQueryKey(), ["applications"], ["dashboard"]])
+  });
+
+  const hideMutation = useMutation({
+    mutationFn: () => setFeedJobHidden(job.id, !job.hidden),
+    onMutate: onActionStart,
+    onError: onActionError,
+    onSuccess: () => invalidate([feedJobsQueryKey()])
+  });
+
+  const savedProspect = job.savedProspectId != null;
+  const createdApplication = job.createdApplicationId != null;
+  const linkClass =
+    "inline-flex h-8 items-center whitespace-nowrap rounded-md border border-accent/50 bg-accent/10 px-2 text-xs font-semibold text-text";
+  const actionClass =
+    "h-8 rounded-md border border-line/70 px-2 text-xs font-semibold text-muted transition hover:border-accent/60 hover:bg-accent/10 hover:text-text disabled:cursor-wait disabled:opacity-60";
+
+  return (
+    <div className="flex items-center gap-1 px-2">
+      {savedProspect ? (
+        <span className={linkClass}>Saved ✓</span>
+      ) : (
+        <button
+          type="button"
+          disabled={saveProspectMutation.isPending}
+          onClick={() => saveProspectMutation.mutate()}
+          className={actionClass}
+        >
+          {saveProspectMutation.isPending ? "Saving…" : "Save prospect"}
+        </button>
+      )}
+      {createdApplication ? (
+        <span className={linkClass}>Application ✓</span>
+      ) : (
+        <button
+          type="button"
+          disabled={createApplicationMutation.isPending}
+          onClick={() => createApplicationMutation.mutate()}
+          className={actionClass}
+        >
+          {createApplicationMutation.isPending ? "Creating…" : "Create application"}
+        </button>
+      )}
+      <button
+        type="button"
+        disabled={hideMutation.isPending}
+        onClick={() => hideMutation.mutate()}
+        className={actionClass}
+      >
+        {job.hidden ? "Unhide" : "Hide"}
+      </button>
+    </div>
+  );
+}
+
+export default function FeedPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sponsorship, setSponsorship] = useState("");
@@ -108,12 +178,7 @@ export default function FeedPage() {
   const [sorting, setSorting] = useState<SortingState>([{ id: "postedAt", desc: true }]);
   const [page, setPage] = useState(0);
   const [mutationError, setMutationError] = useState<unknown | null>(null);
-  // Per-row in-flight actions ("save:12", "apply:12", "hide:12"). Reading
-  // mutation.variables instead would wrongly re-enable row A when row B is
-  // clicked while A's request is still running.
-  const [pendingActions, setPendingActions] = useState<ReadonlySet<string>>(new Set());
 
-  // Debounce the search box so typing does not fire a request per keystroke.
   useEffect(() => {
     const handle = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => window.clearTimeout(handle);
@@ -123,7 +188,6 @@ export default function FeedPage() {
   const sortField = (sort?.id as FeedSortField | undefined) ?? "postedAt";
   const sortDir = sort?.desc === false ? "asc" : "desc";
 
-  // Reset to the first page whenever a filter or sort changes so results stay in range.
   useEffect(() => {
     setPage(0);
   }, [debouncedSearch, sponsorship, openFilter, showHidden, sortField, sortDir]);
@@ -154,54 +218,6 @@ export default function FeedPage() {
     refetchInterval: 90_000
   });
   const health = healthQuery.data;
-
-  const setActionPending = (key: string, pending: boolean) =>
-    setPendingActions((previous) => {
-      const next = new Set(previous);
-      if (pending) {
-        next.add(key);
-      } else {
-        next.delete(key);
-      }
-      return next;
-    });
-
-  // Shared row-action scaffolding: clear the error banner, mark the row's action
-  // in-flight, invalidate the affected query families on success. Feed mutations
-  // never change health, so they invalidate the jobs prefix, not all of ["feed"].
-  const rowAction = <TVars,>(
-    action: string,
-    idOf: (variables: TVars) => number,
-    invalidates: readonly (readonly string[])[]
-  ) => ({
-    onMutate: (variables: TVars) => {
-      setMutationError(null);
-      setActionPending(`${action}:${idOf(variables)}`, true);
-    },
-    onError: (error: unknown) => setMutationError(error),
-    onSuccess: () => {
-      for (const queryKey of invalidates) {
-        void queryClient.invalidateQueries({ queryKey });
-      }
-    },
-    onSettled: (_data: unknown, _error: unknown, variables: TVars) =>
-      setActionPending(`${action}:${idOf(variables)}`, false)
-  });
-
-  const hideMutation = useMutation({
-    mutationFn: ({ id, hidden }: { id: number; hidden: boolean }) => setFeedJobHidden(id, hidden),
-    ...rowAction("hide", ({ id }: { id: number }) => id, [feedJobsQueryKey()])
-  });
-
-  const saveProspectMutation = useMutation({
-    mutationFn: (id: number) => saveFeedJobProspect(id),
-    ...rowAction("save", (id: number) => id, [feedJobsQueryKey(), ["prospects"]])
-  });
-
-  const createApplicationMutation = useMutation({
-    mutationFn: (id: number) => createFeedJobApplication(id),
-    ...rowAction("apply", (id: number) => id, [feedJobsQueryKey(), ["applications"], ["dashboard"]])
-  });
 
   const columns = useMemo<ColumnDef<FeedJob>[]>(
     () => [
@@ -266,63 +282,22 @@ export default function FeedPage() {
         id: "postedAt",
         accessorFn: (row) => row.postedAt,
         header: "Posted",
-        cell: ({ row }) => <span className="whitespace-nowrap px-2 text-sm text-muted">{formatDate(row.original.postedAt)}</span>
+        cell: ({ row }) => <span className="whitespace-nowrap px-2 text-sm text-muted">{formatDate(row.original.postedAt, "—")}</span>
       },
       {
         id: "actions",
         header: "Actions",
         enableSorting: false,
-        cell: ({ row }) => {
-          const job = row.original;
-          const savedProspect = job.savedProspectId != null;
-          const createdApplication = job.createdApplicationId != null;
-          const savingProspect = pendingActions.has(`save:${job.id}`);
-          const creatingApplication = pendingActions.has(`apply:${job.id}`);
-          const hiding = pendingActions.has(`hide:${job.id}`);
-          const linkClass =
-            "inline-flex h-8 items-center whitespace-nowrap rounded-md border border-accent/50 bg-accent/10 px-2 text-xs font-semibold text-text";
-          const actionClass =
-            "h-8 rounded-md border border-line/70 px-2 text-xs font-semibold text-muted transition hover:border-accent/60 hover:bg-accent/10 hover:text-text disabled:cursor-wait disabled:opacity-60";
-          return (
-            <div className="flex items-center gap-1 px-2">
-              {savedProspect ? (
-                <span className={linkClass}>Saved ✓</span>
-              ) : (
-                <button
-                  type="button"
-                  disabled={savingProspect}
-                  onClick={() => saveProspectMutation.mutate(job.id)}
-                  className={actionClass}
-                >
-                  {savingProspect ? "Saving…" : "Save prospect"}
-                </button>
-              )}
-              {createdApplication ? (
-                <span className={linkClass}>Application ✓</span>
-              ) : (
-                <button
-                  type="button"
-                  disabled={creatingApplication}
-                  onClick={() => createApplicationMutation.mutate(job.id)}
-                  className={actionClass}
-                >
-                  {creatingApplication ? "Creating…" : "Create application"}
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={hiding}
-                onClick={() => hideMutation.mutate({ id: job.id, hidden: !job.hidden })}
-                className={actionClass}
-              >
-                {job.hidden ? "Unhide" : "Hide"}
-              </button>
-            </div>
-          );
-        }
+        cell: ({ row }) => (
+          <FeedRowActions
+            job={row.original}
+            onActionStart={() => setMutationError(null)}
+            onActionError={setMutationError}
+          />
+        )
       }
     ],
-    [hideMutation, saveProspectMutation, createApplicationMutation, pendingActions]
+    []
   );
 
   const table = useReactTable({
@@ -342,10 +317,6 @@ export default function FeedPage() {
   const totalPages = query.data?.totalPages ?? 0;
   const currentPage = query.data?.page ?? page;
   const jobCountMeta = `${totalElements} ${totalElements === 1 ? "job" : "jobs"}`;
-  // When the feed is healthy, add a subtle freshness note; staleness/failure is
-  // surfaced by the banner instead, so it is not repeated here. Worded as "last
-  // change" because a feed can be fresh via unchanged-file skips while the last
-  // applied change is older.
   const healthyFreshness =
     health && !health.stale && health.lastRun?.status !== "FAILED" && health.lastSuccessAt
       ? `last change ${formatRelative(health.lastSuccessAt)}`
@@ -417,12 +388,12 @@ export default function FeedPage() {
           </div>
 
           {mutationError ? (
-            <div className="border-b border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">{buildErrorMessage(mutationError)}</div>
+            <div className="border-b border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">{errorMessage(mutationError)}</div>
           ) : null}
 
           {query.error ? (
             <div className="p-4">
-              <EmptyState title="Could not load feed jobs" detail={buildErrorMessage(query.error)} />
+              <EmptyState title="Could not load feed jobs" detail={errorMessage(query.error)} />
             </div>
           ) : query.isLoading ? (
             <div className="p-4">

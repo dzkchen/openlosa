@@ -62,3 +62,7 @@ export function appendQueryParam(searchParams: URLSearchParams, key: string, val
   }
   searchParams.set(key, String(value));
 }
+
+export function errorMessage(error: unknown, fallback = "Something went wrong.") {
+  return error instanceof Error ? error.message : fallback;
+}

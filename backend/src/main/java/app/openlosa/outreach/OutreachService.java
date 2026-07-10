@@ -22,6 +22,7 @@ import app.openlosa.application.CompanyService;
 import app.openlosa.application.JobApplication;
 import app.openlosa.application.JobApplicationRepository;
 import app.openlosa.common.api.BadRequestException;
+import app.openlosa.common.api.LikeQueries;
 import app.openlosa.common.api.NotFoundException;
 import app.openlosa.contact.Contact;
 import app.openlosa.contact.ContactRepository;
@@ -349,7 +350,7 @@ public class OutreachService {
                 predicates.add(cb.equal(companyJoin.get("id"), companyId));
             }
             if (StringUtils.hasText(company)) {
-                predicates.add(cb.like(cb.lower(companyJoin.get("name")), "%" + company.trim().toLowerCase() + "%"));
+                predicates.add(cb.like(cb.lower(companyJoin.get("name")), LikeQueries.contains(company), LikeQueries.ESCAPE));
             }
             if (sentFrom != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("sentAt"), sentFrom));
@@ -364,13 +365,13 @@ public class OutreachService {
                 predicates.add(cb.lessThanOrEqualTo(root.get("followUpBy"), followUpTo));
             }
             if (StringUtils.hasText(q)) {
-                String like = "%" + q.trim().toLowerCase() + "%";
+                String like = LikeQueries.contains(q);
                 predicates.add(cb.or(
-                    cb.like(cb.lower(root.get("notes")), like),
-                    cb.like(cb.lower(contactJoin.get("name")), like),
-                    cb.like(cb.lower(contactJoin.get("email")), like),
-                    cb.like(cb.lower(companyJoin.get("name")), like),
-                    cb.like(cb.lower(applicationJoin.get("roleTitle")), like)
+                    cb.like(cb.lower(root.get("notes")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(contactJoin.get("name")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(contactJoin.get("email")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(companyJoin.get("name")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(applicationJoin.get("roleTitle")), like, LikeQueries.ESCAPE)
                 ));
             }
 

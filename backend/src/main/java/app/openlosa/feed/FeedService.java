@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import app.openlosa.application.ApplicationService;
+import app.openlosa.common.api.LikeQueries;
 import app.openlosa.common.api.NotFoundException;
 import app.openlosa.common.api.PagedResponse;
 import app.openlosa.feed.dto.FeedHealthResponse;
@@ -34,7 +35,6 @@ public class FeedService {
         "postedAt", "postedAt",
         "lastSeenAt", "lastSeenAt"
     );
-    private static final String DEFAULT_SORT = "postedAt";
     private static final int DEFAULT_PAGE_SIZE = 25;
     private static final int MAX_PAGE_SIZE = 100;
 
@@ -59,8 +59,6 @@ public class FeedService {
             prospectService,
             applicationService,
             staleAfterHours,
-            // Ingest runs stamp ran_at with Clock.systemUTC(); compare against the same
-            // zone so the staleness window is measured consistently.
             Clock.systemUTC()
         );
     }
@@ -88,8 +86,6 @@ public class FeedService {
     public FeedHealthResponse health() {
         var lastRun = runRepository.findFirstByOrderByIdDesc().orElse(null);
         var lastSuccess = runRepository.findFirstByStatusOrderByIdDesc(FeedIngestStatus.SUCCESS).orElse(null);
-        // Effective freshness: the most recent run that confirmed the DB reflects the
-        // engine file — either an applied change or a confirmed-unchanged snapshot.
         var lastFresh = runRepository
             .findFirstByFileFingerprintIsNotNullAndStatusInOrderByIdDesc(FeedIngestStatus.FINGERPRINTED)
             .orElse(null);
@@ -132,12 +128,6 @@ public class FeedService {
         return FeedMapper.toResponse(job);
     }
 
-    /**
-     * Save a prospect pre-filled from the feed job and link it via saved_prospect_id.
-     * Idempotent: if the job is already linked to a prospect (double-click, retry) the
-     * existing link is returned without creating a duplicate. The row is pessimistically
-     * locked so concurrent calls serialise. Works regardless of open/hidden state.
-     */
     @Transactional
     public FeedJobResponse saveProspect(Long id) {
         var job = requireJobForUpdate(id);
@@ -152,12 +142,6 @@ public class FeedService {
         return FeedMapper.toResponse(job);
     }
 
-    /**
-     * Create a SAVED application (source = FEED) pre-filled from the feed job and link it
-     * via created_application_id. Idempotent under the same rules as {@link #saveProspect}.
-     * Company is resolved by name and the initial status_transition is written through
-     * ApplicationService, preserving the Sankey/stats invariant.
-     */
     @Transactional
     public FeedJobResponse createApplication(Long id) {
         var job = requireJobForUpdate(id);
@@ -197,8 +181,6 @@ public class FeedService {
         return (root, query, cb) -> {
             var predicates = new ArrayList<Predicate>();
 
-            // Hidden rows are user-archived; exclude them unless the caller opts in with hidden=true,
-            // which then reveals the full set (hidden and visible) so a row can be unhidden.
             if (!Boolean.TRUE.equals(hidden)) {
                 predicates.add(cb.isFalse(root.get("hidden")));
             }
@@ -215,10 +197,10 @@ public class FeedService {
                 predicates.add(cb.lessThanOrEqualTo(root.get("postedAt"), postedTo));
             }
             if (StringUtils.hasText(q)) {
-                var like = "%" + q.trim().toLowerCase() + "%";
+                var like = LikeQueries.contains(q);
                 predicates.add(cb.or(
-                    cb.like(cb.lower(root.get("companyName")), like),
-                    cb.like(cb.lower(root.get("title")), like)
+                    cb.like(cb.lower(root.get("companyName")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(root.get("title")), like, LikeQueries.ESCAPE)
                 ));
             }
 
@@ -227,19 +209,14 @@ public class FeedService {
     }
 
     private Pageable pageable(Integer page, Integer size, String sort, String dir) {
-        // Negative page/size never reach here: the controller's @Min validation rejects
-        // them with 400. Only null defaults and the upper size bound are handled.
         var pageNumber = page == null ? 0 : page;
         var pageSize = size == null ? DEFAULT_PAGE_SIZE : Math.min(size, MAX_PAGE_SIZE);
         return PageRequest.of(pageNumber, pageSize, sort(sort, dir));
     }
 
     private Sort sort(String sort, String dir) {
-        var property = SORT_FIELDS.getOrDefault(StringUtils.hasText(sort) ? sort : DEFAULT_SORT, "postedAt");
+        var property = SORT_FIELDS.getOrDefault(StringUtils.hasText(sort) ? sort : "postedAt", "postedAt");
         var direction = "asc".equalsIgnoreCase(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
-        // id desc is a deterministic tiebreak so pages never shuffle rows sharing a sort value.
-        // posted_at is nullable; MySQL orders NULLs as the lowest value, so the default
-        // postedAt-desc sort sinks jobs with no posted date to the end of the list.
         return Sort.by(direction, property).and(Sort.by(Sort.Direction.DESC, "id"));
     }
 }

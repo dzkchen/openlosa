@@ -46,7 +46,6 @@ class FeedJobsApiIntegrationTest {
         jdbcTemplate.update("DELETE FROM prospect");
         jdbcTemplate.update("DELETE FROM application");
         jdbcTemplate.update("DELETE FROM company");
-        // posted_at ordering (desc): Beta 06-05, Gamma 06-03, Acme 06-01, Epsilon null (sinks last).
         insert("greenhouse:acme:1", "Acme Corp", "Backend Intern", "H1B", LocalDate.parse("2026-06-01"), true, false);
         insert("greenhouse:beta:2", "Beta Labs", "Frontend Intern", "NONE", LocalDate.parse("2026-06-05"), true, false);
         insert("ashby:gamma:3", "Gamma Inc", "Data Engineer", "H1B", LocalDate.parse("2026-06-03"), false, false);
@@ -83,7 +82,6 @@ class FeedJobsApiIntegrationTest {
             .andExpect(jsonPath("$.content", hasSize(2)))
             .andExpect(jsonPath("$.content[*].companyName", contains("Acme Corp", "Epsilon")));
 
-        // Page past the end returns an empty slice, not an error.
         mockMvc.perform(get("/api/v1/feed/jobs").param("size", "2").param("page", "5"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.page", is(5)))
@@ -177,7 +175,6 @@ class FeedJobsApiIntegrationTest {
             .andExpect(jsonPath("$.id", is((int) acmeId)))
             .andExpect(jsonPath("$.hidden", is(true)));
 
-        // Acme is now hidden, so the default list drops from 4 to 3.
         mockMvc.perform(get("/api/v1/feed/jobs"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.totalElements", is(3)));
@@ -252,12 +249,10 @@ class FeedJobsApiIntegrationTest {
             "https://example.com/greenhouse:acme:1", application.get("posting_url"));
         org.junit.jupiter.api.Assertions.assertEquals("Remote", application.get("location"));
 
-        // Company resolved implicitly by name.
         String companyName = jdbcTemplate.queryForObject(
             "SELECT name FROM company WHERE id = ?", String.class, application.get("company_id"));
         org.junit.jupiter.api.Assertions.assertEquals("Acme Corp", companyName);
 
-        // The initial SAVED status_transition must be written (Sankey/stats invariant).
         var transitions = jdbcTemplate.queryForList(
             "SELECT from_status, to_status FROM status_transition WHERE application_id = ?",
             application.get("id"));
@@ -281,7 +276,6 @@ class FeedJobsApiIntegrationTest {
             .andExpect(status().isOk())
             .andReturn().getResponse().getContentAsString();
 
-        // Same link returned both times; no duplicate prospect created.
         org.junit.jupiter.api.Assertions.assertEquals(first, second);
         Integer prospectCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM prospect", Integer.class);
         org.junit.jupiter.api.Assertions.assertEquals(1, prospectCount);
@@ -307,8 +301,8 @@ class FeedJobsApiIntegrationTest {
 
     @Test
     void actionsWorkOnClosedAndHiddenJobs() throws Exception {
-        long gammaId = idOf("ashby:gamma:3"); // closed
-        long deltaId = idOf("lever:delta:4"); // hidden
+        long gammaId = idOf("ashby:gamma:3");
+        long deltaId = idOf("lever:delta:4");
 
         mockMvc.perform(post("/api/v1/feed/jobs/{id}/create-application", gammaId))
             .andExpect(status().isOk())
@@ -330,6 +324,38 @@ class FeedJobsApiIntegrationTest {
         mockMvc.perform(post("/api/v1/feed/jobs/{id}/create-application", 999999))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.detail", is("Feed job 999999 was not found")));
+    }
+
+    @Test
+    void saveProspectTruncatesNameTooLongForProspectColumn() throws Exception {
+        insertWithText("greenhouse:longtitle:9", "Acme Corp", "T".repeat(400), "Remote");
+        long id = idOf("greenhouse:longtitle:9");
+
+        mockMvc.perform(post("/api/v1/feed/jobs/{id}/save-prospect", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.savedProspectId").isNumber());
+
+        String name = jdbcTemplate.queryForObject("SELECT name FROM prospect", String.class);
+        org.junit.jupiter.api.Assertions.assertTrue(
+            name.length() <= 255, "prospect name should be truncated to the column limit");
+        org.junit.jupiter.api.Assertions.assertTrue(
+            name.startsWith("Acme Corp — "), "truncated name should keep the composed prefix");
+    }
+
+    @Test
+    void createApplicationTruncatesTitleAndLocationTooLongForColumns() throws Exception {
+        insertWithText("greenhouse:longboth:9", "Acme Corp", "R".repeat(400), "L".repeat(400));
+        long id = idOf("greenhouse:longboth:9");
+
+        mockMvc.perform(post("/api/v1/feed/jobs/{id}/create-application", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.createdApplicationId").isNumber());
+
+        var application = jdbcTemplate.queryForMap("SELECT role_title, location FROM application");
+        org.junit.jupiter.api.Assertions.assertTrue(
+            ((String) application.get("role_title")).length() <= 255, "role_title should be truncated");
+        org.junit.jupiter.api.Assertions.assertTrue(
+            ((String) application.get("location")).length() <= 255, "location should be truncated");
     }
 
     private void insert(
@@ -360,6 +386,25 @@ class FeedJobsApiIntegrationTest {
             now,
             open,
             hidden
+        );
+    }
+
+    private void insertWithText(String engineId, String company, String title, String location) {
+        var now = LocalDateTime.of(2026, 6, 11, 8, 0);
+        jdbcTemplate.update("""
+            INSERT INTO feed_job
+                (engine_id, company_name, title, url, location, source_ats, sponsorship,
+                 posted_at, first_seen_at, last_seen_at, is_open, hidden, missed_successful_ingests)
+            VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, TRUE, FALSE, 0)
+            """,
+            engineId,
+            company,
+            title,
+            "https://example.com/" + engineId,
+            location,
+            engineId.split(":")[0],
+            now,
+            now
         );
     }
 

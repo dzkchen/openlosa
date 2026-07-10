@@ -25,6 +25,7 @@ import app.openlosa.application.dto.ApplicationResponse;
 import app.openlosa.application.dto.ApplicationUpdateRequest;
 import app.openlosa.application.dto.StatusTransitionResponse;
 import app.openlosa.common.api.BadRequestException;
+import app.openlosa.common.api.LikeQueries;
 import app.openlosa.common.api.NotFoundException;
 import app.openlosa.prospect.ProspectRepository;
 import jakarta.persistence.criteria.Predicate;
@@ -55,6 +56,7 @@ public class ApplicationService {
         ApplicationStatus.WITHDRAWN,
         ApplicationStatus.GHOSTED
     );
+    private static final int TEXT_FIELD_MAX_LENGTH = 255;
 
     private final JobApplicationRepository applicationRepository;
     private final StatusTransitionRepository transitionRepository;
@@ -148,16 +150,14 @@ public class ApplicationService {
 
     @Transactional
     public JobApplication createFromFeed(String companyName, String roleTitle, String postingUrl, String location) {
-        // Goes through createApplication so the initial status_transition is written and the
-        // company is resolved by name, keeping the Sankey/stats invariant intact.
         return createApplication(new ApplicationCreateRequest(
             null,
             companyName,
             null,
             null,
-            roleTitle,
+            truncate(roleTitle, TEXT_FIELD_MAX_LENGTH),
             postingUrl,
-            location,
+            truncate(location, TEXT_FIELD_MAX_LENGTH),
             ApplicationStatus.SAVED,
             null,
             ApplicationSource.FEED,
@@ -421,7 +421,7 @@ public class ApplicationService {
                 predicates.add(cb.equal(companyJoin.get("id"), companyId));
             }
             if (StringUtils.hasText(company)) {
-                predicates.add(cb.like(cb.lower(companyJoin.get("name")), "%" + company.trim().toLowerCase() + "%"));
+                predicates.add(cb.like(cb.lower(companyJoin.get("name")), LikeQueries.contains(company), LikeQueries.ESCAPE));
             }
             if (favorite != null) {
                 predicates.add(cb.equal(root.get("favorite"), favorite));
@@ -436,13 +436,13 @@ public class ApplicationService {
                 predicates.add(cb.lessThanOrEqualTo(root.get("appliedAt"), appliedTo));
             }
             if (StringUtils.hasText(q)) {
-                String like = "%" + q.trim().toLowerCase() + "%";
+                String like = LikeQueries.contains(q);
                 predicates.add(cb.or(
-                    cb.like(cb.lower(root.get("roleTitle")), like),
-                    cb.like(cb.lower(root.get("postingUrl")), like),
-                    cb.like(cb.lower(root.get("location")), like),
-                    cb.like(cb.lower(root.get("notes")), like),
-                    cb.like(cb.lower(companyJoin.get("name")), like)
+                    cb.like(cb.lower(root.get("roleTitle")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(root.get("postingUrl")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(root.get("location")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(root.get("notes")), like, LikeQueries.ESCAPE),
+                    cb.like(cb.lower(companyJoin.get("name")), like, LikeQueries.ESCAPE)
                 ));
             }
 
@@ -466,5 +466,12 @@ public class ApplicationService {
 
     private String clean(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength - 1) + "…";
     }
 }

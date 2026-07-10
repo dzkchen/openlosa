@@ -8,6 +8,7 @@ import {
   type EmailLookup,
   type EmailLookupStatus
 } from "../../../api/emailFinder";
+import { errorMessage } from "../../../api/client";
 import type { Contact } from "../../../api/contacts";
 import EmptyState from "../../../components/layout/EmptyState";
 import WorkspacePanel from "../../../components/layout/WorkspacePanel";
@@ -38,12 +39,8 @@ const statusClasses: Record<EmailLookupStatus, string> = {
   DOES_NOT_EXIST: "border-line/80 bg-elevated/50 text-muted"
 };
 
-function buildErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Email Finder request failed.";
-}
-
 function sidecarFriendlyMessage(error: unknown) {
-  const message = buildErrorMessage(error);
+  const message = errorMessage(error, "Email Finder request failed.");
   const normalized = message.toLowerCase();
   if (normalized.includes("sidecar")) {
     if (normalized.includes("unavailable") || normalized.includes("timed out")) {
@@ -197,7 +194,7 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
       if (generation !== requestGeneration.current) {
         return;
       }
-      setToastMessage(buildErrorMessage(error));
+      setToastMessage(errorMessage(error, "Email Finder request failed."));
     },
     onSuccess: (result, { generation }) => {
       void queryClient.invalidateQueries({ queryKey: ["contacts"] });
@@ -376,7 +373,7 @@ export default function EmailFinderPanel({ contacts, contactsLoading, launch }: 
             role="alert"
             className="flex flex-col gap-2 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn sm:flex-row sm:items-center sm:justify-between"
           >
-            <span>Could not load previous results: {buildErrorMessage(previousLookupsQuery.error)}</span>
+            <span>Could not load previous results: {errorMessage(previousLookupsQuery.error, "Email Finder request failed.")}</span>
             <button
               type="button"
               onClick={() => void previousLookupsQuery.refetch()}
